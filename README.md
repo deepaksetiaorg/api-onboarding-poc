@@ -418,7 +418,8 @@ Ideally use a second GitHub account (with Read access) as the "other team". **Wi
 | Local dry run: design, codegen config + Docker generation, proxy bundle, validation messages | ✅ Done |
 | GitHub end to end: intake → 3 forms → parent auto-closed, including OpenAPI Generator | ✅ Done |
 | GitHub access control: scenarios 1, 2, 3, 4, 5, 8 | ✅ Done |
-| GitHub access control: 7, 7b, 11–17 | ✅ Done (with `GOVERNANCE` temporarily excluding the tester) |
+| GitHub access control: 7, 7b, 12–17 | ✅ Done (with `GOVERNANCE` temporarily excluding the tester) |
+| Scenario 11 on GitHub | Unit-tested. Live needs a second account (with one account you're always the submission's author, and authors may close their own) |
 | Scenarios 6, 9, 10 on GitHub | Covered by unit tests (6) or not run live yet |
 | Apigee deploy, ADO comments/state, Azure Function deployed in Azure | ⏳ Not run yet |
 
@@ -466,6 +467,7 @@ Form → validate → authorize → generate the YAML your repo already expects 
 - **Forms can't hide fields,** so the pre-filled ones say "please leave as is". `authorize.py` and `read_form.py` reject changes.
 - **Workflow token events don't trigger workflows.** Issue changes made with the workflow's own token don't start other workflows, which is why `report.py` checks parent progress directly.
 - **Write access bypasses everything.** Anyone with Write could edit workflows or the Owners line. Keep Write for governance only, and add branch protection + `CODEOWNERS` on `.github/` and `scripts/`.
+- **Closing several steps at the same moment** can post "🎉 All steps are done" twice (parallel guard runs). Harmless: the parent is only closed once in effect.
 - **`apigeecli` flags** in `step-proxy.yml` should be checked against your installed version.
 - **For production:**
   - Use a **GitHub App** instead of PATs.
