@@ -29,6 +29,8 @@ def check_parent(child_number: int) -> None:
     parent = marker(child.get("body"), "parent")
     if not parent:
         return
+    if gh("GET", f"/repos/{repo()}/issues/{parent}")["state"] == "closed":
+        return  # already done (e.g. several steps were closed at once)
     subs = gh("GET", f"/repos/{repo()}/issues/{parent}/sub_issues?per_page=100")
     open_steps = [s for s in subs if s["state"] == "open"]
     if open_steps:

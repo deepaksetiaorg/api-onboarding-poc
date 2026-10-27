@@ -177,6 +177,8 @@ How `scripts/authorize.py` decides:
 - People with Read access can't close, reopen or edit issues they didn't create. Triage can close/reopen any issue, and Write can also edit. So with GitHub permissions alone, Triage/Write users (and every collaborator on a personal-account repo) could close steps or edit the Owners line. The guard undoes that.
 - People with Write access could still change the workflows themselves. Keep Write for governance, and protect `.github/` and `scripts/` with branch protection + `CODEOWNERS`.
 
+**Notifications:** usernames on the Owners line are @-mentions, so owners get a GitHub notification when they're added. Don't use real accounts as test data.
+
 **List format** (both `GOVERNANCE` and Owners): comma-separated GitHub usernames with `@` (`@alice, @bob`), matched case-insensitively, or **team slugs** from the repo's org (`member-squad`). Team slugs need the repo in a GitHub org and a `TEAM_READ_TOKEN` secret (a token with `read:org`). Without it, team entries never match.
 
 **Fails closed:**
