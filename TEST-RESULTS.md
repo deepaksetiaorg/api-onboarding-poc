@@ -9,7 +9,7 @@
 
 | Area | Result |
 |---|---|
-| Unit tests: access control + guard (`scripts/test_authorize.py`) | ✅ 22/22 passed |
+| Unit tests: access control, guard, owner assignment (`scripts/test_authorize.py`) | ✅ 30/30 passed |
 | Unit tests: ADO webhook handler (`azure-function/test_handler.py`) | ✅ 4/4 passed |
 | Local dry run: design, codegen (config + OpenAPI Generator in Docker), proxy, validation messages | ✅ Passed |
 | GitHub end to end: intake → 3 forms → parent auto-closed | ✅ Passed |
@@ -91,6 +91,20 @@ Before the guard (`progress.yml`), a non-owner closing the three step issues of 
 | 15 | Non-governance adds self to Owners line | #18, then #30 | ↩️ Reverted, next form still rejected | ✅ |
 | 16 | Non-governance changes a step's hidden parent link | #20 | ↩️ Reverted | ✅ |
 | 17 | Governance closes, reopens and edits a parent | #18 | All allowed | ✅ |
+
+## Owner assignment (`c293cb9`, `3e4334c`)
+
+Test API `assign-api`: parent #36, steps #37 / #38 / #39. Owners at intake: `@setia141` and the made-up `@nobody-owner-zx81q` (confirmed not to exist on GitHub).
+
+| # | Scenario | Evidence | Expected | Result |
+|---|---|---|---|---|
+| 18 | Intake assigns individual owners to step issues | #36–#39 | `setia141` assigned to #37–#39, parent unassigned, ⚠️ comment for the made-up name, Owners line in code format (no pings) | ✅ |
+| 19 | Governance removes an owner (step #39 already closed) | #36 | Unassigned on #37 and #38, #39 keeps its assignee, summary comment | ✅ |
+| 20 | Governance adds the owner back | #36 | Assigned on #37 and #38 only | ✅ |
+| 21 | Assigned by hand but not an owner, submits a form | #37, #40 | 🔒 Rejected: assignees never grant access | ✅ |
+| – | Rejection comments list owners without pinging them | unit test | Owners shown as `` `@name` `` | ✅ (fixed in `3e4334c` after #40 showed a plain mention) |
+
+Unit tests: 30/30 passed.
 
 ## Not tested / known issues
 
