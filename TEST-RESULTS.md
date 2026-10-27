@@ -129,7 +129,18 @@ Repo transferred to `deepaksetiaorg/api-onboarding-poc` (commit `57cb921`).
 | Intake with a team + a person as owners | #45–#48 | ✅ Team mentioned (`@deepaksetiaorg/member-squad`), person assigned to the 3 steps |
 | Design form in the org | #49 | ✅ Ran, step #46 closed |
 | Branch protection / enforced CODEOWNERS | — | ❌ Not available on GitHub Free for private repos. `.github/CODEOWNERS` added (review requests only) |
-| Team-based owner/governance checks | — | ⏳ Need a `TEAM_READ_TOKEN` secret; until then team entries never match (fails closed) |
+| Team-based owner/governance checks | see below | ✅ With `TEAM_READ_TOKEN` (classic token, `read:org` only, set by the repo admin) |
+
+**Team checks** (`TEAM_READ_TOKEN` set 2026-10-27; tester `setia141` is in `api-governance`, not in `member-squad`):
+
+| # | Scenario | Evidence | Expected | Result |
+|---|---|---|---|---|
+| T1 | `GOVERNANCE=api-governance` (team only), member starts onboardings | #50, #53 | Intake runs | ✅ |
+| T2 | Not in governance, member of the owner team `api-governance` submits | #58 | Runs | ✅ |
+| T3 | Not in governance, not in owner team `member-squad`, submits | #59 | 🔒 "isn't an owner of `teamother-api` (owners: `member-squad`)" | ✅ |
+| – | Two onboardings started at the same time | #50–#57 | Interleaved issue numbers kept apart by the `steps` marker | ✅ |
+
+`GOVERNANCE` left as `@setia141, api-governance`, so a person still works if the token expires.
 
 ## Not tested / known issues
 
