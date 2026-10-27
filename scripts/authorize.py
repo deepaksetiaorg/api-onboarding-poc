@@ -160,7 +160,7 @@ def check_step(step: str, form: dict, user: str) -> str | None:
     owners, parent = step_owners(child)
     if in_any(user, owners + entries(os.environ.get("GOVERNANCE"))):
         return None
-    listed = ", ".join(owners) or "none yet"
+    listed = format_owners(owners) or "none yet"
     return (f"@{user} isn't an owner of `{form['api_name']}` (owners: {listed}). "
             f"Ask the governance team to add you on #{parent['number'] if parent else '?'}.")
 
@@ -206,7 +206,7 @@ def guard_reason(issue: dict, user: str, action: str) -> str | None:
         if action == "edited":
             return "only the governance team can edit a step issue."
         owners, _ = step_owners(issue)
-        return None if in_any(user, owners) else f"only the owners ({', '.join(owners) or 'none yet'}) or governance can {VERB[action]} this step."
+        return None if in_any(user, owners) else f"only the owners ({format_owners(owners) or 'none yet'}) or governance can {VERB[action]} this step."
     step = next((s for s in TEMPLATES if f"{s}-request" in labels), None)
     if step and action == "closed" and user != (issue.get("user") or {}).get("login"):
         child, _ = linked_step(step, parse_form(issue.get("body", ""), TEMPLATES[step]))
