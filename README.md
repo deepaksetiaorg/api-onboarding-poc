@@ -87,7 +87,7 @@ Three kinds of issues work together:
 | Issue | Created by | Title | Labels | Carries |
 |---|---|---|---|---|
 | **Parent** (tracking) | Bot (intake) | `[API] member-api` | `api-request` | Visible `**Owners:**` line, spec, requester, ADO id. Step issues are attached as native **sub-issues**, which gives a progress bar. |
-| **Step** (one per step) | Bot (intake) | `[Design] / [Codegen] / [Proxy] member-api` | `api-step`, `step:<step>` | "Fill in the details here" link and hidden markers: `parent`, `step`, `api`, `ado` |
+| **Step** (one per step) | Bot (intake) | `[Design] / [Codegen] / [Proxy] member-api` | `api-step`, `step:<step>` | "Fill in the details here" link and hidden markers: `parent`, `step`, `api`, `ado`. **Assigned** to the individual owners |
 | **Submission** (the filled form) | Owner or governance | `[Codegen] member-api` | `design-request` / `codegen-request` / `proxy-request` | Form answers, including the pre-filled API name and **tracking issue number** (= the step issue) |
 
 **Hidden markers** are HTML comments in a bot-created issue body, for example `<!-- parent:5 -->` and `<!-- api:member-api -->`. They let the scripts move from a submission to its step issue to its parent without a database. They are only trusted on issues created by `github-actions[bot]`.
@@ -177,7 +177,20 @@ How `scripts/authorize.py` decides:
 - People with Read access can't close, reopen or edit issues they didn't create. Triage can close/reopen any issue, and Write can also edit. So with GitHub permissions alone, Triage/Write users (and every collaborator on a personal-account repo) could close steps or edit the Owners line. The guard undoes that.
 - People with Write access could still change the workflows themselves. Keep Write for governance, and protect `.github/` and `scripts/` with branch protection + `CODEOWNERS`.
 
-**Notifications:** usernames on the Owners line are @-mentions, so owners get a GitHub notification when they're added. Don't use real accounts as test data.
+**Owners vs. assignees.** These are deliberately two different things:
+
+| | Owners | Assignees |
+|---|---|---|
+| Meaning | Who is **allowed** to act on the API | Who is **working on** a step |
+| Source | `**Owners:**` line on the parent | GitHub assignees on the step issues |
+| Grants access? | **Yes**, the only thing that does | **Never**. `authorize.py` must not read assignees, since anyone with Triage can change them |
+| Changed by | Governance (guarded) | The bot, and people adjusting who does the work |
+
+- **At intake,** every individual owner (`@alice`) is assigned to the three **step** issues. The parent has no assignee: it belongs to governance, and owners can't close it.
+- **Teams aren't expanded into assignees.** A team snapshot would go stale and hit GitHub's 10-assignee limit. The bot @-mentions the team (`@org/member-squad`) instead, so GitHub notifies its *current* members.
+- **When governance edits the Owners line,** added owners are assigned and removed owners are unassigned on **open** step issues only. Completed steps keep their history, and assignees added by hand are left alone. The bot comments a summary on the parent.
+- **Typo check:** each owner is checked with GitHub's "can this user be assigned?" API. If not, the bot comments "⚠️ `@x` can't be assigned: check the username and that they have access to this repo". More than 10 individual owners gets a warning to use a team.
+- **Notifications:** the Owners line shows names in code format (`` `@alice` ``), so writing or editing it doesn't ping anyone. Notifications come from the assignment (people) and the mention (teams). Old Owners lines with plain `@alice` still work.
 
 **List format** (both `GOVERNANCE` and Owners): comma-separated GitHub usernames with `@` (`@alice, @bob`), matched case-insensitively, or **team slugs** from the repo's org (`member-squad`). Team slugs need the repo in a GitHub org and a `TEAM_READ_TOKEN` secret (a token with `read:org`). Without it, team entries never match.
 
@@ -198,6 +211,8 @@ How `scripts/authorize.py` decides:
 | **Class-name preview before generating** | Names are the most common reason to regenerate. | None. |
 | **Run workflow button as the default trigger** | Works today with no Azure or ADO dependency. Governance stays in control of what gets onboarded. | One manual click per API. Automatic options are kept in section 4. |
 | **Owners named by governance at intake, stored on the parent issue** | Governance decides who owns what. The line is visible, auditable (issue edit history) and easy to change, and needs no database or ADO field. | Changing owners is a manual edit by governance. |
+| **Owners grant access, assignees only show who's working** | Assignees are a task-tracking field anyone with Triage can change, can't hold teams, and are capped at 10. Making them the access list would weaken security; locking them to the owners would block "Alice is doing this step". The bot mirrors owners into assignees one way. | Two concepts to explain. The README and the bot's comments make the split explicit. |
+| **Teams are mentioned, not expanded into assignees** | Mentions notify a team's current members, so nothing goes stale. In production, owners should be GitHub teams synced from your identity provider, so people moving between teams needs no edits here. | Team members don't see the step under "Assigned to me". |
 | **Separate `authorize` job in front of each step** | The step jobs stay unchanged. A rejected submission never reaches the job that reads specs or deploys. | One extra short job per submission (~15 s). |
 | **Fail closed everywhere** | This is a governance control. A misconfiguration should block, not allow. | Forgetting `GOVERNANCE` blocks everyone until it's set. |
 | **Hidden markers instead of a database** | Zero infrastructure. The state lives with the issues it describes. | Markers are only trusted on bot-created issues, which is checked. |
@@ -292,7 +307,7 @@ The function reads the API name from `Custom.APIName` (falls back to the title) 
    1. Go to **Actions → "0 - API intake" → Run workflow**.
    2. Enter the API name (lowercase, dashes, e.g. `member-api`) and the **owners** (`@alice, @bob`). Optionally add the ADO work item id and spec location.
 2. **Share the parent issue** `[API] <name>` with the owners. It links to the three step forms.
-3. **Change owners:** edit the `**Owners:**` line on the parent issue. The change applies from the next form submission.
+3. **Change owners:** edit the `**Owners:**` line on the parent issue, e.g. `` `@alice`, `@carol` ``. Access changes from the next form submission. The bot updates the assignees on open step issues and comments a summary. Changing assignees by hand does **not** change access.
 4. **Fix a team's form:** edit their submission. It re-runs as you, and you're allowed as governance.
 
 ### API owner team
@@ -316,7 +331,7 @@ Run sections 7.1 and 7.2 on your machine. Sections 7.3–7.5 run on GitHub.
 ### 7.1 Unit tests (no network)
 
 ```bash
-python scripts/test_authorize.py          # 22 tests: access control, guard rules, undoing rejected actions
+python scripts/test_authorize.py          # 30 tests: access control, guard rules, undoing rejected actions, owner/assignee sync
 python azure-function/test_handler.py     # 4 tests: ADO webhook handler (run from azure-function/ or repo root)
 ```
 
@@ -397,6 +412,10 @@ Ideally use a second GitHub account (with Read access) as the "other team". **Wi
 | 15 | Non-governance edits the parent's Owners line | Add yourself to Owners | ↩️ Body restored, your next form is still rejected |
 | 16 | Non-governance edits a step issue's hidden links | Change `<!-- parent:N -->` | ↩️ Body restored |
 | 17 | Governance closes/reopens/edits any of these | As governance | ✅ Allowed |
+| 18 | Intake assigns owners | Start an onboarding with owners `` `@<you>` `` and a made-up username | You're assigned to the 3 step issues, the parent has no assignee, ⚠️ comment for the made-up name, nobody pinged by the Owners line |
+| 19 | Governance removes an owner | Close one step, then remove yourself from the Owners line | Unassigned on the open steps only. The closed step keeps you. Summary comment on the parent |
+| 20 | Governance adds an owner back | Add yourself again | Assigned on the open steps only |
+| 21 | Assigned but not an owner | Assign a non-owner by hand, they submit | 🔒 Still rejected (assignees never grant access) |
 
 ### 7.5 Validation tests on GitHub
 

@@ -32,7 +32,8 @@ VERB = {"closed": "close", "reopened": "reopen", "edited": "edit"}
 
 
 def entries(text: str | None) -> list[str]:
-    return [e.strip() for e in (text or "").split(",") if e.strip()]
+    # Owners lines show names as `@alice` (code format, so they don't ping); plain @alice works too.
+    return [e.strip().strip("`").strip() for e in (text or "").split(",") if e.strip().strip("`").strip()]
 
 
 def is_member(user: str, entry: str) -> bool:
@@ -61,11 +62,82 @@ def bot_issue(number) -> dict | None:
     return issue if (issue.get("user") or {}).get("login") == BOT else None
 
 
+# --------------------------------------------------------------------------- #
+# Assignees: who is working on a step. Display only. They NEVER grant access:
+# access comes from the Owners line, and nothing in this file may read assignees.
+# --------------------------------------------------------------------------- #
+MAX_ASSIGNEES = 10  # GitHub's limit per issue
+
+
+def owners_in(body: str | None) -> list[str]:
+    m = OWNERS_RE.search(body or "")
+    return entries(m.group(1)) if m else []
+
+
+def format_owners(owners: list[str]) -> str:
+    return ", ".join(f"`{o}`" for o in owners)
+
+
+def users(owners: list[str]) -> list[str]:
+    return [o[1:] for o in owners if o.startswith("@")]
+
+
+def owner_changes(old_body: str, new_body: str) -> tuple[list[str], list[str]]:
+    """(added, removed) owners between two versions of a parent issue body. Case-insensitive."""
+    old, new = owners_in(old_body), owners_in(new_body)
+    old_l, new_l = {o.lower() for o in old}, {o.lower() for o in new}
+    return [o for o in new if o.lower() not in old_l], [o for o in old if o.lower() not in new_l]
+
+
+def assignable(user: str) -> bool:
+    try:
+        gh("GET", f"/repos/{repo()}/assignees/{user}")  # 204 if they can be assigned
+        return True
+    except RuntimeError:
+        return False  # 404: no such user, or no access to the repo
+
+
+def sync_assignees(issues: list[int], add: list[str], remove: list[str]) -> list[str]:
+    """Assign `add` and unassign `remove` (usernames) on each issue. Returns users who couldn't be assigned."""
+    ok = [u for u in add if assignable(u)]
+    for number in issues:
+        if ok:
+            gh("POST", f"/repos/{repo()}/issues/{number}/assignees", {"assignees": ok[:MAX_ASSIGNEES]})
+        if remove:
+            gh("DELETE", f"/repos/{repo()}/issues/{number}/assignees", {"assignees": remove})
+    return [u for u in add if u not in ok]
+
+
+def owners_note(teams: list[str], unassignable: list[str], extra: int = 0) -> str:
+    """Comment text: notify added teams (live membership, so nothing goes stale) and flag bad usernames."""
+    org = repo().split("/")[0]
+    lines = [f"👥 @{org}/{t}: you're now an owner of this API." for t in teams]
+    lines += [f"⚠️ `@{u}` can't be assigned: check the username and that they have access to this repo."
+              for u in unassignable]
+    if extra > 0:
+        lines.append(f"⚠️ Only {MAX_ASSIGNEES} people can be assigned to an issue, {extra} owner(s) weren't assigned "
+                     "(they're still owners). Consider using a GitHub team.")
+    return "\n".join(lines)
+
+
+def sync_owner_change(parent: dict, prev_body: str) -> None:
+    """Governance edited a parent: assign added owners and unassign removed ones on OPEN steps only."""
+    added, removed = owner_changes(prev_body, parent.get("body") or "")
+    if not (added or removed):
+        return
+    subs = gh("GET", f"/repos/{repo()}/issues/{parent['number']}/sub_issues?per_page=100") or []
+    open_steps = [s["number"] for s in subs if s.get("state") == "open"]
+    bad = sync_assignees(open_steps, users(added), users(removed))
+    summary = (f"👥 Owners updated. Added: {format_owners(added) or 'none'}. Removed: {format_owners(removed) or 'none'}. "
+               f"Assignees updated on open steps: {', '.join(f'#{n}' for n in open_steps) or 'none'}.")
+    note = owners_note([o for o in added if not o.startswith("@")], bad)
+    comment(parent["number"], summary + (f"\n\n{note}" if note else ""))
+
+
 def step_owners(child: dict) -> tuple[list[str], dict | None]:
     """Owners of a step issue, from the Owners line of its bot-created parent."""
     parent = bot_issue(marker(child.get("body"), "parent"))
-    m = OWNERS_RE.search((parent or {}).get("body") or "")
-    return (entries(m.group(1)) if m else []), parent
+    return owners_in((parent or {}).get("body")), parent
 
 
 def linked_step(step: str, form: dict) -> tuple[dict | None, str | None]:
@@ -157,9 +229,14 @@ def main() -> None:
 
     if mode == "guard":
         number, action = int(os.environ["ISSUE_NUMBER"]), os.environ["ACTION"]
-        reason = guard_reason(gh("GET", f"/repos/{repo()}/issues/{number}"), user, action)
+        issue = gh("GET", f"/repos/{repo()}/issues/{number}")
+        reason = guard_reason(issue, user, action)
+        prev_body = os.environ.get("PREV_BODY", "")
         if reason:
-            reject(number, user, reason, action, os.environ.get("PREV_TITLE", ""), os.environ.get("PREV_BODY", ""))
+            reject(number, user, reason, action, os.environ.get("PREV_TITLE", ""), prev_body)
+        elif action == "edited" and prev_body and (issue.get("user") or {}).get("login") == BOT and any(
+                lb["name"] == "api-request" for lb in issue.get("labels", [])):
+            sync_owner_change(issue, prev_body)  # governance changed the Owners line
         print(reason or f"@{user} may {VERB[action]} #{number}")
         set_output("allowed", str(reason is None).lower())
         return

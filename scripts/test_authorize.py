@@ -109,6 +109,67 @@ class GuardTests(unittest.TestCase):
         self.assertIsNone(authorize.guard_reason({"user": {"login": "x"}, "labels": []}, "carol", "closed"))
 
 
+class OwnerAssigneeTests(unittest.TestCase):
+    """Assignees mirror the Owners line for display. They never grant access."""
+
+    def test_code_formatted_and_plain_owners_both_parse(self):
+        self.assertEqual(authorize.owners_in("**Owners:** `@alice`, `team-x`, @bob"), ["@alice", "team-x", "@bob"])
+        self.assertEqual(authorize.format_owners(["@alice", "team-x"]), "`@alice`, `team-x`")
+
+    def test_owner_changes_case_insensitive(self):
+        added, removed = authorize.owner_changes("**Owners:** `@alice`, `@Bob`", "**Owners:** `@bob`, `@carol`")
+        self.assertEqual((added, removed), (["@carol"], ["@alice"]))
+
+    def test_users_skips_teams(self):
+        self.assertEqual(authorize.users(["@alice", "member-squad"]), ["alice"])
+
+    def test_sync_assignees_skips_unassignable(self):
+        calls = []
+        def gh(method, path, data=None, token=None):
+            calls.append((method, path, data))
+            if path.endswith("/assignees/ghost"):
+                raise RuntimeError("404")
+        with mock.patch.object(authorize, "gh", gh):
+            bad = authorize.sync_assignees([2, 3], ["alice", "ghost"], ["bob"])
+        self.assertEqual(bad, ["ghost"])
+        writes = [c for c in calls if c[0] != "GET"]
+        self.assertEqual(writes, [
+            ("POST", "/repos/org/repo/issues/2/assignees", {"assignees": ["alice"]}),
+            ("DELETE", "/repos/org/repo/issues/2/assignees", {"assignees": ["bob"]}),
+            ("POST", "/repos/org/repo/issues/3/assignees", {"assignees": ["alice"]}),
+            ("DELETE", "/repos/org/repo/issues/3/assignees", {"assignees": ["bob"]}),
+        ])
+
+    def test_sync_owner_change_only_touches_open_steps(self):
+        parent = {"number": 1, "body": "**Owners:** `@alice`, `@carol`"}
+        subs = [{"number": 2, "state": "open"}, {"number": 3, "state": "closed"}]
+        with mock.patch.object(authorize, "gh", lambda m, p, d=None, token=None: subs if "sub_issues" in p else None), \
+             mock.patch.object(authorize, "sync_assignees", return_value=[]) as sync, \
+             mock.patch.object(authorize, "comment") as comment:
+            authorize.sync_owner_change(parent, "**Owners:** `@alice`, `@bob`")
+        sync.assert_called_once_with([2], ["carol"], ["bob"])
+        self.assertIn("Added: `@carol`", comment.call_args[0][1])
+
+    def test_no_owner_change_does_nothing(self):
+        with mock.patch.object(authorize, "gh") as gh, mock.patch.object(authorize, "comment") as comment:
+            authorize.sync_owner_change({"number": 1, "body": "**Owners:** `@alice`"}, "**Owners:** @alice")
+        gh.assert_not_called()
+        comment.assert_not_called()
+
+    def test_note_mentions_teams_and_flags_bad_users(self):
+        note = authorize.owners_note(["member-squad"], ["ghost"], extra=2)
+        self.assertIn("@org/member-squad", note)
+        self.assertIn("`@ghost` can't be assigned", note)
+        self.assertIn("2 owner(s) weren't assigned", note)
+
+    def test_access_never_reads_assignees(self):
+        # An assigned non-owner is still rejected: access only comes from the Owners line.
+        step = dict(ISSUES["/repos/org/repo/issues/2"], assignees=[{"login": "carol"}])
+        with mock.patch.object(authorize, "gh", fake_gh):
+            self.assertIsNotNone(authorize.guard_reason(step, "carol", "closed"))
+            self.assertIsNotNone(authorize.check_step("codegen", form(), "carol"))
+
+
 class RejectTests(unittest.TestCase):
     """A rejected action must leave the owner's submission as it was."""
 

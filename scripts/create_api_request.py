@@ -7,7 +7,8 @@ import os
 import sys
 import urllib.parse
 
-from common import (ado_comment, ado_update, gh, issue_url, make_marker, marker, repo,
+from authorize import MAX_ASSIGNEES, entries, format_owners, owners_note, sync_assignees, users
+from common import (ado_comment, ado_update, comment, gh, issue_url, make_marker, marker, repo,
                     set_output, slugify)
 
 STEPS = [
@@ -40,7 +41,7 @@ def main() -> None:
     spec = (os.environ.get("SPEC_LOCATION") or "").strip()
     requested_by = (os.environ.get("REQUESTED_BY") or "").strip()
     ado_title = (os.environ.get("ADO_TITLE") or "").strip()
-    owners = ", ".join(o.strip() for o in (os.environ.get("OWNERS") or "").split(",") if o.strip())
+    owners = entries(os.environ.get("OWNERS"))
 
     existing = find_existing_parent(ado_id)
     if existing:
@@ -57,7 +58,7 @@ def main() -> None:
     pnum = parent["number"]
 
     # 2) Children, each linked as a native sub-issue of the parent
-    rows = []
+    rows, step_numbers = [], []
     for key, template, prefix, purpose in STEPS:
         child = gh("POST", f"/repos/{repo()}/issues", {
             "title": f"{prefix} {api_name}",
@@ -94,6 +95,7 @@ def main() -> None:
         gh("PATCH", f"/repos/{repo()}/issues/{cnum}", {"body": body})
         gh("POST", f"/repos/{repo()}/issues/{pnum}/sub_issues", {"sub_issue_id": child["id"]})
         rows.append(f"| {prefix.strip('[]')} | #{cnum} | [Open form]({link}) |")
+        step_numbers.append(cnum)
 
     # 3) Final parent body
     parent_body = "\n".join([
@@ -101,7 +103,7 @@ def main() -> None:
         "",
         f"ADO intake: **{ado_title or ado_id or 'n/a'}**" + (f" (work item {ado_id})" if ado_id else ""),
         f"Requested by: {requested_by or 'n/a'}",
-        f"**Owners:** {owners}",
+        f"**Owners:** {format_owners(owners)}",
         "_Only owners and the governance team can submit the step forms. Governance can edit the line above to change owners._",
         f"Spec: `{spec or 'not provided yet'}`",
         "",
@@ -117,7 +119,16 @@ def main() -> None:
     ])
     gh("PATCH", f"/repos/{repo()}/issues/{pnum}", {"body": parent_body})
 
-    # 4) Tell ADO where to follow along
+    # 4) Assign individual owners to the step issues (display only, access comes from the Owners line).
+    #    Teams aren't expanded into assignees: they're mentioned, so GitHub notifies the current members.
+    people = users(owners)
+    bad = sync_assignees(step_numbers, people, [])
+    note = owners_note([o for o in owners if not o.startswith("@")], bad,
+                       extra=len(people) - len(bad) - MAX_ASSIGNEES)
+    if note:
+        comment(pnum, note)
+
+    # 5) Tell ADO where to follow along
     ado_update(ado_id, link=issue_url(pnum))
     ado_comment(ado_id, f"GitHub tracking issue created: <a href='{issue_url(pnum)}'>#{pnum}</a> "
                         f"with design, code generation and proxy steps.")
