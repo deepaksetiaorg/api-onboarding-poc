@@ -118,7 +118,7 @@ sequenceDiagram
             ST->>GH: "⏳ Working on it" + run link
             ST->>ST: fetch spec, do the step's work, upload artifact
             ST->>GH: result + download link, close submission
-            ST->>P: close step issue; if all 3 closed, close parent + ADO
+            ST->>P: close step issue, and if all 3 are closed, close parent + update ADO
         end
     end
 ```
