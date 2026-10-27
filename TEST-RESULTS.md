@@ -1,7 +1,7 @@
 # Test results
 
 **Date:** 2026-10-27  
-**Repo:** `setia141/api-onboarding-poc` (private, personal account)  
+**Repo:** `setia141/api-onboarding-poc` (private, personal account) for all tests below, then transferred to `deepaksetiaorg/api-onboarding-poc` (see [Org move](#org-move)). Issue numbers are unchanged.  
 **Code tested:** `main` at `089e538` (access control `0e24ddf`, undo of rejected actions `5e8df35`, guard `39219a0`, parent close fix `cd0b069`, owner assignment `c293cb9`/`3e4334c`, steps marker `089e538`)  
 **How to re-run:** see [README section 7](README.md#7-how-to-test).
 

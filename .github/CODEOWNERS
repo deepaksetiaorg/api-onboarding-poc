@@ -1,0 +1,4 @@
+# Changes to the automation and its access rules need governance review.
+# Enforced only with branch protection ("Require review from Code Owners"), which needs GitHub Team/Pro for private repos.
+/.github/  @deepaksetiaorg/api-governance
+/scripts/  @deepaksetiaorg/api-governance

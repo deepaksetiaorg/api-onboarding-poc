@@ -244,7 +244,7 @@ Only workflow 0 ("API intake") needs a trigger. Everything after it works the sa
 ### 5.1 GitHub repo (10 min)
 
 1. Create a repo (e.g. `api-onboarding-poc`), ideally **in a GitHub org**, and push this folder to it.
-2. **Settings → Actions → General → Workflow permissions:** "Read and write permissions".
+2. **Workflow permissions:** nothing to change. Every workflow declares exactly what it needs (`issues: write`, `contents: read`), which works even when the org restricts the default token to read-only (recommended).
 3. **Settings → General → Features:** turn on **Issues**.
 4. **Access** (Settings → Collaborators and teams):
    - Governance team: **Write** (or Maintain).
