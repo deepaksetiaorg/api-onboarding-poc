@@ -1,0 +1,92 @@
+name: "3. Apigee proxy"
+description: "Get an Apigee proxy bundle (and optional dev deployment) generated from your OpenAPI spec."
+title: "[Proxy] <api-name>"
+labels: ["proxy-request"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        ## How this works
+        1. Tell us where the backend lives and how callers should authenticate.
+        2. A bot builds the Apigee proxy from your spec, comments with a download link, and (if enabled) deploys it to the chosen environment.
+        3. Something wrong? Edit this issue and the bot runs again.
+
+  - type: input
+    id: api_name
+    attributes:
+      label: API name
+      description: Filled in automatically. Also used as the proxy name.
+      placeholder: "member-api"
+    validations:
+      required: true
+
+  - type: input
+    id: tracking_issue
+    attributes:
+      label: Tracking issue number
+      description: Filled in automatically. Please leave as is.
+
+  - type: input
+    id: ado_work_item
+    attributes:
+      label: ADO work item
+      description: Filled in automatically. Please leave as is.
+
+  - type: input
+    id: spec_location
+    attributes:
+      label: OpenAPI spec location
+      description: A path in this repo (e.g. `specs/member-api.yaml`) or a full GitHub URL to your spec file.
+      placeholder: "specs/member-api.yaml"
+    validations:
+      required: true
+
+  - type: input
+    id: base_path
+    attributes:
+      label: Base path (optional)
+      description: |
+        The URL path callers will use on the gateway. Must start with `/`.
+        Leave blank to use `/<api-name>/v1`.
+      placeholder: "/member-api/v1"
+
+  - type: input
+    id: target_url
+    attributes:
+      label: Backend URL
+      description: Where Apigee should forward requests. Must start with `https://`.
+      placeholder: "https://member-service.dev.internal.example.com"
+    validations:
+      required: true
+
+  - type: dropdown
+    id: environment
+    attributes:
+      label: Environment
+      options:
+        - dev
+        - test
+    validations:
+      required: true
+
+  - type: dropdown
+    id: security
+    attributes:
+      label: How should callers authenticate?
+      options:
+        - API key
+        - OAuth 2.0 access token
+    validations:
+      required: true
+
+  - type: input
+    id: rate_limit
+    attributes:
+      label: Rate limit (optional)
+      description: Max requests per second across all callers. Leave blank for `20ps`.
+      placeholder: "20ps"
+
+  - type: textarea
+    id: notes
+    attributes:
+      label: Anything else? (optional)

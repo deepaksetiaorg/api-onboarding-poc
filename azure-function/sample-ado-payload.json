@@ -1,0 +1,21 @@
+{
+  "eventType": "workitem.updated",
+  "resource": {
+    "id": 5,
+    "workItemId": 12345,
+    "fields": {
+      "System.State": { "oldValue": "New", "newValue": "Approved" }
+    },
+    "revision": {
+      "id": 12345,
+      "fields": {
+        "System.WorkItemType": "API Intake",
+        "System.Title": "Member API",
+        "System.State": "Approved",
+        "System.CreatedBy": { "displayName": "Jane Doe", "uniqueName": "jdoe@example.com" },
+        "Custom.APIName": "member-api",
+        "Custom.SpecLocation": "specs/member-api.yaml"
+      }
+    }
+  }
+}

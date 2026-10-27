@@ -1,0 +1,66 @@
+# Step 0: ADO intake approved -> one parent tracking issue + 3 child issues (design, codegen, proxy).
+# Triggered by the Azure Function (repository_dispatch), or by hand from the Actions tab for demos.
+name: "0 - API intake"
+
+on:
+  repository_dispatch:
+    types: [ado-intake-approved]
+  workflow_dispatch:
+    inputs:
+      api_name:
+        description: "API name (lowercase, dashes)"
+        required: true
+        default: "member-api"
+      ado_work_item:
+        description: "ADO work item id (optional for demo)"
+        required: false
+      spec_location:
+        description: "Spec path or GitHub URL (optional)"
+        required: false
+        default: "specs/member-api.yaml"
+      requested_by:
+        description: "Who asked for it"
+        required: false
+
+permissions:
+  contents: read
+  issues: write
+
+jobs:
+  create-issues:
+    runs-on: ubuntu-latest
+    env:
+      GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      ADO_ORG_URL: ${{ vars.ADO_ORG_URL }}
+      ADO_PROJECT: ${{ vars.ADO_PROJECT }}
+      ADO_PAT: ${{ secrets.ADO_PAT }}
+      # Values come from either the ADO dispatch payload or the manual form.
+      API_NAME: ${{ github.event.client_payload.api_name || inputs.api_name }}
+      ADO_WORK_ITEM: ${{ github.event.client_payload.ado_work_item || inputs.ado_work_item }}
+      SPEC_LOCATION: ${{ github.event.client_payload.spec_location || inputs.spec_location }}
+      REQUESTED_BY: ${{ github.event.client_payload.requested_by || inputs.requested_by || github.actor }}
+      ADO_TITLE: ${{ github.event.client_payload.title }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - run: pip install pyyaml
+
+      - name: Make sure labels exist
+        run: |
+          gh label create api-request     --color 5319e7 --description "Parent tracking issue for an API" --force
+          gh label create api-step        --color c5def5 --description "One step of API onboarding" --force
+          gh label create step:design     --color bfd4f2 --force
+          gh label create step:codegen    --color bfd4f2 --force
+          gh label create step:proxy      --color bfd4f2 --force
+          gh label create design-request  --color 0e8a16 --description "Design check form" --force
+          gh label create codegen-request --color 0e8a16 --description "Code generation form" --force
+          gh label create proxy-request   --color 0e8a16 --description "Apigee proxy form" --force
+          gh label create needs-changes   --color d93f0b --description "Waiting on the requester" --force
+
+      - name: Create parent + child issues
+        run: python scripts/create_api_request.py

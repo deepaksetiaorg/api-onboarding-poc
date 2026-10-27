@@ -1,0 +1,4 @@
+work/
+azure-function/local.settings.json
+__pycache__/
+.python_packages/

@@ -1,0 +1,7 @@
+# Teams normally reach these forms through the links in their tracking issue,
+# which pre-fill the API name, tracking issue and ADO work item.
+blank_issues_enabled: false
+contact_links:
+  - name: Questions about the API onboarding process
+    url: https://github.com/OWNER/REPO/discussions
+    about: Ask the API platform team.

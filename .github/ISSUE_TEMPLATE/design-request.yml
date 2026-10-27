@@ -1,0 +1,79 @@
+name: "1. API design review"
+description: "Submit your OpenAPI spec for an automated design check against our API standards."
+title: "[Design] <api-name>"
+labels: ["design-request"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        ## How this works
+        1. Point us to your OpenAPI spec and submit.
+        2. A bot checks it against our API standards and comments with anything to fix, in plain language.
+        3. Fixed it? Edit this issue (or just re-save it) and the bot checks again. When it passes, this step closes automatically.
+
+  - type: input
+    id: api_name
+    attributes:
+      label: API name
+      description: Filled in automatically. Lowercase letters, numbers and dashes.
+      placeholder: "member-api"
+    validations:
+      required: true
+
+  - type: input
+    id: tracking_issue
+    attributes:
+      label: Tracking issue number
+      description: Filled in automatically. Please leave as is.
+
+  - type: input
+    id: ado_work_item
+    attributes:
+      label: ADO work item
+      description: Filled in automatically. Please leave as is.
+
+  - type: input
+    id: api_owner
+    attributes:
+      label: API owner (email or GitHub username)
+      description: The person accountable for this API's design.
+      placeholder: "@jdoe"
+    validations:
+      required: true
+
+  - type: input
+    id: spec_location
+    attributes:
+      label: OpenAPI spec location
+      description: A path in this repo (e.g. `specs/member-api.yaml`) or a full GitHub URL to your spec file.
+      placeholder: "https://github.com/<org>/<repo>/blob/main/api/member-api.yaml"
+    validations:
+      required: true
+
+  - type: dropdown
+    id: audience
+    attributes:
+      label: Who will call this API?
+      options:
+        - Internal teams only
+        - Partners / vendors
+        - Public / members
+    validations:
+      required: true
+
+  - type: dropdown
+    id: data_sensitivity
+    attributes:
+      label: Does it handle sensitive data?
+      description: This decides which security checks apply.
+      options:
+        - No sensitive data
+        - PII (personal info)
+        - PHI (health info)
+    validations:
+      required: true
+
+  - type: textarea
+    id: notes
+    attributes:
+      label: Anything else? (optional)

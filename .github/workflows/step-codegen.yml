@@ -1,0 +1,80 @@
+# Step 2: code generation. Runs when a "2. Code generation" form is submitted or edited.
+# Form -> validated answers -> codegen.yaml -> class-name preview -> OpenAPI Generator -> downloadable artifact.
+name: "2 - Code generation"
+
+on:
+  issues:
+    types: [opened, edited, reopened]
+
+permissions:
+  contents: read
+  issues: write
+
+concurrency:
+  group: codegen-${{ github.event.issue.number }}
+  cancel-in-progress: true
+
+jobs:
+  codegen:
+    if: contains(github.event.issue.labels.*.name, 'codegen-request') && github.event.issue.state == 'open'
+    runs-on: ubuntu-latest
+    env:
+      GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      SPEC_READ_TOKEN: ${{ secrets.SPEC_READ_TOKEN }}
+      ADO_ORG_URL: ${{ vars.ADO_ORG_URL }}
+      ADO_PROJECT: ${{ vars.ADO_PROJECT }}
+      ADO_PAT: ${{ secrets.ADO_PAT }}
+      ADO_DONE_STATE: ${{ vars.ADO_DONE_STATE }}
+      ISSUE_NUMBER: ${{ github.event.issue.number }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install pyyaml
+
+      - name: Read form
+        id: form
+        env:
+          ISSUE_BODY: ${{ github.event.issue.body }}
+        run: python scripts/read_form.py codegen
+
+      - name: Fetch spec
+        id: spec
+        if: steps.form.outputs.valid == 'true'
+        run: python scripts/fetch_spec.py
+
+      - name: Ask for fixes
+        if: steps.form.outputs.valid == 'false' || steps.spec.outputs.valid == 'false'
+        run: python scripts/report.py needs-changes --details work/errors.md
+
+      - name: Let the requester know we started
+        if: steps.spec.outputs.valid == 'true'
+        run: python scripts/report.py started
+
+      - name: Build config + preview class names
+        if: steps.spec.outputs.valid == 'true'
+        run: python scripts/codegen.py config
+
+      - name: Generate code
+        if: steps.spec.outputs.valid == 'true'
+        run: |
+          python scripts/codegen.py run
+          cp work/codegen.yaml work/output/codegen.yaml   # ship the config with the code for traceability
+
+      - name: Upload generated code
+        id: upload
+        if: steps.spec.outputs.valid == 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ steps.form.outputs.api_name }}-generated-code
+          path: work/output
+          retention-days: 30
+
+      - name: Report - done
+        if: steps.spec.outputs.valid == 'true'
+        run: python scripts/report.py success --details work/preview.md --artifact-url "${{ steps.upload.outputs.artifact-url }}"
+
+      - name: Report - unexpected failure
+        if: failure()
+        run: python scripts/report.py failure

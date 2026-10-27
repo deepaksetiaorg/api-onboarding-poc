@@ -1,0 +1,179 @@
+name: "2. Code generation"
+description: "Generate code from your OpenAPI spec. Answer a few questions and we'll handle the rest."
+title: "[Codegen] <api-name>"
+labels: ["codegen-request"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        ## How this works
+        1. Fill in this form. Optional fields use team defaults if left blank.
+        2. Submit. A bot generates your code and comments here with a **preview of your class names** and a **download link**.
+        3. Something wrong? Edit this issue and the bot runs again.
+
+  # ---------- Filled in automatically from the tracking issue link ----------
+  - type: input
+    id: api_name
+    attributes:
+      label: API name
+      description: Filled in automatically. Lowercase letters, numbers and dashes.
+      placeholder: "member-api"
+    validations:
+      required: true
+
+  - type: input
+    id: tracking_issue
+    attributes:
+      label: Tracking issue number
+      description: Filled in automatically. Please leave as is.
+
+  - type: input
+    id: ado_work_item
+    attributes:
+      label: ADO work item
+      description: Filled in automatically. Please leave as is.
+
+  # ---------- About you ----------
+  - type: input
+    id: team_name
+    attributes:
+      label: Team name
+      description: Used for tracking and to build a default package name.
+      placeholder: "member-services"
+    validations:
+      required: true
+
+  - type: input
+    id: contact
+    attributes:
+      label: Contact (email or GitHub username)
+      description: Who we should reach out to if something needs fixing.
+      placeholder: "@jdoe"
+    validations:
+      required: true
+
+  # ---------- Your spec ----------
+  - type: input
+    id: spec_location
+    attributes:
+      label: OpenAPI spec location
+      description: |
+        A path in this repo (e.g. `specs/member-api.yaml`) or a full GitHub URL to your spec file.
+        It must be OpenAPI 3.x.
+      placeholder: "https://github.com/<org>/<repo>/blob/main/api/member-api.yaml"
+    validations:
+      required: true
+
+  # ---------- What to generate ----------
+  - type: dropdown
+    id: generation_type
+    attributes:
+      label: What do you need?
+      description: |
+        **Server stub**: you are building the API, and need controllers and models to fill in.
+        **Client SDK**: you are calling someone else's API, and need code to call it.
+      options:
+        - Server stub (I am building this API)
+        - Client SDK (I am calling this API)
+    validations:
+      required: true
+
+  - type: dropdown
+    id: language
+    attributes:
+      label: Language / framework
+      options:
+        - Java - Spring Boot
+        - Java - plain client (OkHttp/Native)
+        - TypeScript - Axios
+        - TypeScript - Angular
+        - Python
+        - C# / .NET
+    validations:
+      required: true
+
+  # ---------- Naming ----------
+  - type: markdown
+    attributes:
+      value: |
+        ## Naming
+        Your **class names come from your spec**. Schema names like `Member` become model classes, and tags like `members` become API classes such as `MembersApi`.
+        The fields below only add a suffix, rename a class, or change where the files go.
+
+  - type: input
+    id: package_name
+    attributes:
+      label: Base package name (optional)
+      description: |
+        Where your code lives. Lowercase letters and dots only, with no dashes or spaces.
+        Leave blank to use: `com.example.<team-name>`
+      placeholder: "com.example.member"
+
+  - type: input
+    id: group_id
+    attributes:
+      label: Group ID (Java only, optional)
+      description: Maven/Gradle group. Leave blank to use `com.example`.
+      placeholder: "com.example"
+
+  - type: input
+    id: artifact_id
+    attributes:
+      label: Artifact ID (Java only, optional)
+      description: Name of the built library or jar. Lowercase with dashes. Leave blank to use the API name.
+      placeholder: "member-api"
+
+  - type: input
+    id: model_suffix
+    attributes:
+      label: Model class suffix (optional)
+      description: |
+        Added to the end of every model class name.
+        Example: `Dto` turns `Member` into `MemberDto`. Leave blank for no suffix.
+      placeholder: "Dto"
+
+  - type: input
+    id: api_suffix
+    attributes:
+      label: API class suffix (optional)
+      description: |
+        Added to the end of every API class name.
+        Example: `Service` turns `Members` into `MembersService`. Leave blank to use `Api`. For Spring servers, `Api` reads best (the generator adds `Controller` to the implementation itself).
+      placeholder: "Api"
+
+  - type: textarea
+    id: class_renames
+    attributes:
+      label: Rename specific classes (optional)
+      description: |
+        Only if a generated name from your spec doesn't work for you. One per line, in the form `SpecName: NewName`.
+      placeholder: |
+        MemberRecord: Member
+        AddrInfo: Address
+
+  # ---------- Options ----------
+  - type: checkboxes
+    id: options
+    attributes:
+      label: Extra options
+      options:
+        - label: Add validation annotations (e.g. @NotNull, @Size) based on spec rules
+        - label: Generate interfaces only (no default implementation)
+        - label: Include tests / test stubs
+
+  # ---------- Final check ----------
+  - type: checkboxes
+    id: confirm
+    attributes:
+      label: Before you submit
+      options:
+        - label: My spec has meaningful schema names and tags (these become class names)
+          required: true
+        - label: My spec does not contain secrets, real member data, or PHI in examples
+          required: true
+
+  - type: textarea
+    id: notes
+    attributes:
+      label: Anything else? (optional)
+      description: Special requirements or questions for the API team.

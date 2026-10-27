@@ -1,0 +1,15 @@
+{
+  "IsEncrypted": false,
+  "Values": {
+    "FUNCTIONS_WORKER_RUNTIME": "python",
+    "AzureWebJobsStorage": "UseDevelopmentStorage=true",
+    "GITHUB_REPO": "your-org/api-onboarding-poc",
+    "GITHUB_DISPATCH_TOKEN": "<fine-grained PAT with Contents: write on the repo>",
+    "HOOK_USERNAME": "ado-hook",
+    "HOOK_PASSWORD": "<long random string, also entered in the ADO service hook>",
+    "TARGET_STATE": "Approved",
+    "WORK_ITEM_TYPE": "",
+    "API_NAME_FIELD": "Custom.APIName",
+    "SPEC_FIELD": "Custom.SpecLocation"
+  }
+}

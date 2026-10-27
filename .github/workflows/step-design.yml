@@ -1,0 +1,72 @@
+# Step 1: design check. Runs when a "1. API design review" form is submitted or edited.
+name: "1 - Design check"
+
+on:
+  issues:
+    types: [opened, edited, reopened]
+
+permissions:
+  contents: read
+  issues: write
+
+concurrency:
+  group: design-${{ github.event.issue.number }}
+  cancel-in-progress: true
+
+jobs:
+  design:
+    if: contains(github.event.issue.labels.*.name, 'design-request') && github.event.issue.state == 'open'
+    runs-on: ubuntu-latest
+    env:
+      GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      SPEC_READ_TOKEN: ${{ secrets.SPEC_READ_TOKEN }}
+      ADO_ORG_URL: ${{ vars.ADO_ORG_URL }}
+      ADO_PROJECT: ${{ vars.ADO_PROJECT }}
+      ADO_PAT: ${{ secrets.ADO_PAT }}
+      ADO_DONE_STATE: ${{ vars.ADO_DONE_STATE }}
+      ISSUE_NUMBER: ${{ github.event.issue.number }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install pyyaml
+
+      - name: Read form
+        id: form
+        env:
+          ISSUE_BODY: ${{ github.event.issue.body }}
+        run: python scripts/read_form.py design
+
+      - name: Fetch spec
+        id: spec
+        if: steps.form.outputs.valid == 'true'
+        run: python scripts/fetch_spec.py
+
+      - name: Ask for fixes
+        if: steps.form.outputs.valid == 'false' || steps.spec.outputs.valid == 'false'
+        run: python scripts/report.py needs-changes --details work/errors.md
+
+      - name: Lint spec against API standards
+        if: steps.spec.outputs.valid == 'true'
+        run: |
+          npx --yes @stoplight/spectral-cli@6 lint work/spec.yaml \
+            --ruleset .spectral.yaml --format json --output work/lint.json --fail-severity error || true
+          test -s work/lint.json || echo "[]" > work/lint.json
+
+      - name: Summarise results
+        id: lint
+        if: steps.spec.outputs.valid == 'true'
+        run: python scripts/lint_report.py work/lint.json
+
+      - name: Report - passed
+        if: steps.lint.outputs.passed == 'true'
+        run: python scripts/report.py success --details work/lint.md
+
+      - name: Report - fixes needed
+        if: steps.lint.outputs.passed == 'false'
+        run: python scripts/report.py needs-changes --details work/lint.md
+
+      - name: Report - unexpected failure
+        if: failure()
+        run: python scripts/report.py failure

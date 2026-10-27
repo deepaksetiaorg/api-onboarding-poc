@@ -1,0 +1,101 @@
+# Step 3: Apigee proxy. Runs when a "3. Apigee proxy" form is submitted or edited.
+# Always builds a downloadable proxy bundle. Deploys to Apigee only if APIGEE_ORG is configured.
+name: "3 - Apigee proxy"
+
+on:
+  issues:
+    types: [opened, edited, reopened]
+
+permissions:
+  contents: read
+  issues: write
+  id-token: write   # only needed if you use Workload Identity Federation for the deploy step
+
+concurrency:
+  group: proxy-${{ github.event.issue.number }}
+  cancel-in-progress: true
+
+jobs:
+  proxy:
+    if: contains(github.event.issue.labels.*.name, 'proxy-request') && github.event.issue.state == 'open'
+    runs-on: ubuntu-latest
+    env:
+      GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      SPEC_READ_TOKEN: ${{ secrets.SPEC_READ_TOKEN }}
+      ADO_ORG_URL: ${{ vars.ADO_ORG_URL }}
+      ADO_PROJECT: ${{ vars.ADO_PROJECT }}
+      ADO_PAT: ${{ secrets.ADO_PAT }}
+      ADO_DONE_STATE: ${{ vars.ADO_DONE_STATE }}
+      ISSUE_NUMBER: ${{ github.event.issue.number }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install pyyaml
+
+      - name: Read form
+        id: form
+        env:
+          ISSUE_BODY: ${{ github.event.issue.body }}
+        run: python scripts/read_form.py proxy
+
+      - name: Fetch spec
+        id: spec
+        if: steps.form.outputs.valid == 'true'
+        run: python scripts/fetch_spec.py
+
+      - name: Ask for fixes
+        if: steps.form.outputs.valid == 'false' || steps.spec.outputs.valid == 'false'
+        run: python scripts/report.py needs-changes --details work/errors.md
+
+      - name: Let the requester know we started
+        if: steps.spec.outputs.valid == 'true'
+        run: python scripts/report.py started
+
+      - name: Build proxy bundle
+        id: bundle
+        if: steps.spec.outputs.valid == 'true'
+        run: python scripts/generate_proxy.py
+
+      - name: Upload proxy bundle
+        id: upload
+        if: steps.spec.outputs.valid == 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ steps.form.outputs.api_name }}-apigee-proxy
+          path: work/${{ steps.form.outputs.api_name }}-proxy.zip
+          retention-days: 30
+
+      # ---------- Optional: deploy to Apigee (skipped unless vars.APIGEE_ORG is set) ----------
+      - name: Authenticate to Google Cloud
+        if: steps.spec.outputs.valid == 'true' && vars.APIGEE_ORG != ''
+        uses: google-github-actions/auth@v2
+        with:
+          credentials_json: ${{ secrets.GCP_SA_KEY }}   # or use workload_identity_provider + service_account
+
+      - name: Deploy to Apigee
+        id: deploy
+        if: steps.spec.outputs.valid == 'true' && vars.APIGEE_ORG != ''
+        env:
+          APIGEE_ORG: ${{ vars.APIGEE_ORG }}
+          API_NAME: ${{ steps.form.outputs.api_name }}
+        run: |
+          ENV_NAME=$(python -c "import json;print(json.load(open('work/form.json'))['environment'])")
+          curl -sL https://raw.githubusercontent.com/apigee/apigeecli/main/downloadLatest.sh | sh -
+          export PATH="$HOME/.apigeecli/bin:$PATH"
+          TOKEN=$(gcloud auth print-access-token)
+          # Check these flags against your apigeecli version (apigeecli apis create bundle --help)
+          apigeecli apis create bundle --name "$API_NAME" --proxy-folder work/proxy/apiproxy --org "$APIGEE_ORG" --token "$TOKEN"
+          apigeecli apis deploy --name "$API_NAME" --env "$ENV_NAME" --org "$APIGEE_ORG" --token "$TOKEN" --ovr --wait
+          echo "note=Deployed to **$ENV_NAME** in Apigee org \`$APIGEE_ORG\`." >> "$GITHUB_OUTPUT"
+
+      - name: Report - done
+        if: steps.spec.outputs.valid == 'true'
+        env:
+          DEPLOY_NOTE: ${{ steps.deploy.outputs.note || 'Deployment is not enabled in this POC, so download the bundle and import it into Apigee.' }}
+        run: python scripts/report.py success --details work/proxy.md --artifact-url "${{ steps.upload.outputs.artifact-url }}" --extra "$DEPLOY_NOTE"
+
+      - name: Report - unexpected failure
+        if: failure()
+        run: python scripts/report.py failure

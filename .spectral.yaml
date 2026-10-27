@@ -1,0 +1,53 @@
+# API design rules checked by the "Design" step.
+# Start from Spectral's built-in OpenAPI rules, then add house rules.
+# Replace or extend these with your real API standards.
+extends: ["spectral:oas"]
+
+rules:
+  # Tags become API class names in generated code, so every operation needs one.
+  operation-tags: error
+  operation-operationId: error
+  info-contact: error
+  info-description: warn
+
+  schema-names-pascal-case:
+    description: Schema names should be PascalCase (they become class names), e.g. MemberAddress.
+    message: "Schema name '{{property}}' should be PascalCase, e.g. 'MemberAddress'."
+    severity: error
+    given: "$.components.schemas"
+    then:
+      field: "@key"
+      function: pattern
+      functionOptions:
+        match: "^[A-Z][A-Za-z0-9]*$"
+
+  paths-kebab-case:
+    description: Path segments should be lowercase with dashes, e.g. /member-plans.
+    message: "Path '{{property}}' should use lowercase and dashes, e.g. '/member-plans/{id}'."
+    severity: warn
+    given: "$.paths"
+    then:
+      field: "@key"
+      function: pattern
+      functionOptions:
+        match: "^(/([a-z0-9-]+|\\{[A-Za-z0-9]+\\}))+$"
+
+  operation-id-camel-case:
+    description: operationId should be camelCase (it becomes a method name).
+    message: "operationId should be camelCase, e.g. 'getMemberById'."
+    severity: error
+    given: "$.paths[*][get,put,post,delete,patch]"
+    then:
+      field: operationId
+      function: casing
+      functionOptions:
+        type: camel
+
+  security-defined:
+    description: The API must declare how callers authenticate.
+    message: "Add a 'security' section so callers know how to authenticate."
+    severity: error
+    given: "$"
+    then:
+      field: security
+      function: truthy
