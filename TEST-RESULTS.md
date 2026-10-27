@@ -2,14 +2,14 @@
 
 **Date:** 2026-10-27  
 **Repo:** `setia141/api-onboarding-poc` (private, personal account)  
-**Code tested:** `main` at `6681674` (access control `0e24ddf`, undo of rejected actions `5e8df35`, guard `39219a0`, parent close fix `cd0b069`)  
+**Code tested:** `main` at `089e538` (access control `0e24ddf`, undo of rejected actions `5e8df35`, guard `39219a0`, parent close fix `cd0b069`, owner assignment `c293cb9`/`3e4334c`, steps marker `089e538`)  
 **How to re-run:** see [README section 7](README.md#7-how-to-test).
 
 ## Summary
 
 | Area | Result |
 |---|---|
-| Unit tests: access control, guard, owner assignment (`scripts/test_authorize.py`) | ✅ 30/30 passed |
+| Unit tests: access control, guard, owner assignment, steps marker (`scripts/test_authorize.py`) | ✅ 32/32 passed |
 | Unit tests: ADO webhook handler (`azure-function/test_handler.py`) | ✅ 4/4 passed |
 | Local dry run: design, codegen (config + OpenAPI Generator in Docker), proxy, validation messages | ✅ Passed |
 | GitHub end to end: intake → 3 forms → parent auto-closed | ✅ Passed |
@@ -105,6 +105,16 @@ Test API `assign-api`: parent #36, steps #37 / #38 / #39. Owners at intake: `@se
 | – | Rejection comments list owners without pinging them | unit test | Owners shown as `` `@name` `` | ✅ (fixed in `3e4334c` after #40 showed a plain mention) |
 
 Unit tests: 30/30 passed.
+
+## Sub-issue tampering (`089e538`)
+
+GitHub doesn't document who can attach or detach sub-issues; assume Triage and above. "All steps done" now reads the parent's `steps` marker (governance-protected) instead of the sub-issue list.
+
+| # | Scenario | Evidence | Expected | Result |
+|---|---|---|---|---|
+| 22 | Unfinished step #42 detached from parent #41 via the API, then every **attached** step (#43, #44) closed | #41–#44, Guard log "Parent #41: 2/3 steps done" | Parent stays open | ✅ |
+| – | The detached step is then closed | #42, #41 | Parent closes with "🎉 All steps are done" | ✅ |
+| – | Parents without a `steps` marker (created earlier) | unit test | Fall back to the sub-issue list | ✅ (unit) |
 
 ## Not tested / known issues
 
