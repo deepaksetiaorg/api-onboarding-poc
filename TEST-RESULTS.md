@@ -116,6 +116,21 @@ GitHub doesn't document who can attach or detach sub-issues; assume Triage and a
 | – | The detached step is then closed | #42, #41 | Parent closes with "🎉 All steps are done" | ✅ |
 | – | Parents without a `steps` marker (created earlier) | unit test | Fall back to the sub-issue list | ✅ (unit) |
 
+## Org move
+
+Repo transferred to `deepaksetiaorg/api-onboarding-poc` (commit `57cb921`).
+
+| Check | Evidence | Result |
+|---|---|---|
+| Issues, history and `GOVERNANCE` variable carried over | 44 issues | ✅ |
+| Visibility after transfer | — | ⚠️ The transfer left it **public** for about 2–3 minutes. Set back to private straight away, then confirmed anonymous access returns 404. 0 forks, 0 stars |
+| Workflows with the org's read-only default token | intake + design runs | ✅ Workflows declare their own `permissions`, so no org change was needed |
+| Teams | `api-governance` (Write), `member-squad` (Read) | ✅ Created; tester is only in `api-governance` |
+| Intake with a team + a person as owners | #45–#48 | ✅ Team mentioned (`@deepaksetiaorg/member-squad`), person assigned to the 3 steps |
+| Design form in the org | #49 | ✅ Ran, step #46 closed |
+| Branch protection / enforced CODEOWNERS | — | ❌ Not available on GitHub Free for private repos. `.github/CODEOWNERS` added (review requests only) |
+| Team-based owner/governance checks | — | ⏳ Need a `TEAM_READ_TOKEN` secret; until then team entries never match (fails closed) |
+
 ## Not tested / known issues
 
 | Item | Status |
