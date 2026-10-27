@@ -60,5 +60,45 @@ class AuthorizeTests(unittest.TestCase):
             self.assertIsNotNone(authorize.check_step("codegen", form(), "gov"))
 
 
+class RejectTests(unittest.TestCase):
+    """A rejected action must leave the owner's submission as it was."""
+
+    def run_reject(self, action, events=(), prev_title="", prev_body=""):
+        calls = []
+        def gh(method, path, data=None, token=None):
+            calls.append((method, path, data))
+            return list(events) if path.endswith("/events?per_page=100") else {}
+        with mock.patch.object(authorize, "gh", gh), \
+             mock.patch.object(authorize, "comment") as comment, \
+             mock.patch.object(authorize, "close_issue") as close:
+            authorize.reject(5, "carol", "not an owner", action, prev_title, prev_body)
+        return calls, comment, close
+
+    def test_opened_closes_own_issue(self):
+        calls, comment, close = self.run_reject("opened")
+        close.assert_called_once_with(5, "not_planned")
+        self.assertEqual(calls, [])
+
+    def test_edited_restores_previous_body_and_keeps_state(self):
+        calls, comment, close = self.run_reject("edited", prev_body="owner's answers")
+        self.assertEqual(calls, [("PATCH", "/repos/org/repo/issues/5", {"body": "owner's answers"})])
+        close.assert_not_called()
+        self.assertIn("Reverted @carol's edit", comment.call_args[0][1])
+
+    def test_edited_title_only(self):
+        calls, _, _ = self.run_reject("edited", prev_title="[Codegen] member-api")
+        self.assertEqual(calls[0][2], {"title": "[Codegen] member-api"})
+
+    def test_reopened_closes_with_previous_reason(self):
+        events = [{"event": "closed", "state_reason": "not_planned"}, {"event": "reopened"},
+                  {"event": "closed", "state_reason": "completed"}, {"event": "reopened"}]
+        _, _, close = self.run_reject("reopened", events=events)
+        close.assert_called_once_with(5, "completed")
+
+    def test_reopened_without_history_defaults_to_completed(self):
+        _, _, close = self.run_reject("reopened")
+        close.assert_called_once_with(5, "completed")
+
+
 if __name__ == "__main__":
     unittest.main()

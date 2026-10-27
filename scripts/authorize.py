@@ -4,9 +4,14 @@
       Fails unless SENDER is in GOVERNANCE. Guards the intake workflow.
   python scripts/authorize.py <design|codegen|proxy>
       Allows SENDER only if they are an owner of the API (the "Owners:" line on its parent issue)
-      or in GOVERNANCE. Otherwise comments on the submission and closes it. Output: allowed=true|false
+      or in GOVERNANCE. Output: allowed=true|false. If not allowed, nothing runs and the submission
+      is put back the way it was, so the owner isn't affected by someone else's action:
+        opened   -> their own new issue: comment + close
+        edited   -> restore the previous title/body, leave open/closed as it was
+        reopened -> close again with the reason it had before
 
-Env: SENDER, GOVERNANCE, ISSUE_BODY, ISSUE_NUMBER, TEAM_READ_TOKEN (read:org, only needed for team slugs)
+Env: SENDER, GOVERNANCE, ISSUE_BODY, ISSUE_NUMBER, ACTION, PREV_BODY, PREV_TITLE,
+     TEAM_READ_TOKEN (read:org, only needed for team slugs)
 
 Owners are read from bot-created issues, never from the form, so they can't be faked.
 Only people with write access can edit those issues, so only governance can change owners.
@@ -71,6 +76,27 @@ def check_step(step: str, form: dict, user: str) -> str | None:
             f"Ask the governance team to add you on #{parent['number'] if parent else '?'}.")
 
 
+def last_close_reason(number: int) -> str:
+    events = gh("GET", f"/repos/{repo()}/issues/{number}/events?per_page=100") or []
+    closed = [e for e in events if e.get("event") == "closed"]
+    return (closed[-1].get("state_reason") if closed else None) or "completed"
+
+
+def reject(number: int, user: str, reason: str, action: str, prev_title: str, prev_body: str) -> None:
+    """Undo the sender's action instead of punishing the issue's owner for it."""
+    if action == "edited":
+        restore = {k: v for k, v in (("title", prev_title), ("body", prev_body)) if v}
+        if restore:
+            gh("PATCH", f"/repos/{repo()}/issues/{number}", restore)
+        comment(number, f"↩️ Reverted @{user}'s edit, nothing was run. 🔒 {reason}")
+    elif action == "reopened":
+        close_issue(number, last_close_reason(number))
+        comment(number, f"↩️ Closed again, nothing was run. 🔒 {reason}")
+    else:
+        comment(number, f"🔒 Not run: {reason}")
+        close_issue(number, "not_planned")
+
+
 def main() -> None:
     mode = sys.argv[1]
     user = os.environ["SENDER"]
@@ -84,9 +110,8 @@ def main() -> None:
     form = parse_form(os.environ.get("ISSUE_BODY", ""), TEMPLATES[mode])
     reason = check_step(mode, form, user)
     if reason:
-        number = int(os.environ["ISSUE_NUMBER"])
-        comment(number, f"🔒 Not run: {reason}")
-        close_issue(number, "not_planned")
+        reject(int(os.environ["ISSUE_NUMBER"]), user, reason, os.environ.get("ACTION", "opened"),
+               os.environ.get("PREV_TITLE", ""), os.environ.get("PREV_BODY", ""))
     print(reason or f"@{user} is allowed")
     set_output("allowed", str(reason is None).lower())
 

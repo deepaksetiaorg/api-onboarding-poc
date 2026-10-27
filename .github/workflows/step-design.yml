@@ -9,14 +9,10 @@ permissions:
   contents: read
   issues: write
 
-concurrency:
-  group: design-${{ github.event.issue.number }}
-  cancel-in-progress: true
-
 jobs:
   # Only the API's owners (or governance) may submit or edit this form. See scripts/authorize.py.
   authorize:
-    if: contains(github.event.issue.labels.*.name, 'design-request') && github.event.issue.state == 'open'
+    if: contains(github.event.issue.labels.*.name, 'design-request') && (github.event.issue.state == 'open' || github.event.action == 'edited')
     runs-on: ubuntu-latest
     outputs:
       allowed: ${{ steps.check.outputs.allowed }}
@@ -34,11 +30,17 @@ jobs:
           SENDER: ${{ github.event.sender.login }}
           ISSUE_NUMBER: ${{ github.event.issue.number }}
           ISSUE_BODY: ${{ github.event.issue.body }}
+          ACTION: ${{ github.event.action }}
+          PREV_BODY: ${{ github.event.changes.body.from }}
+          PREV_TITLE: ${{ github.event.changes.title.from }}
         run: python scripts/authorize.py design
 
   design:
     needs: authorize
-    if: needs.authorize.outputs.allowed == 'true'
+    if: needs.authorize.outputs.allowed == 'true' && github.event.issue.state == 'open'
+    concurrency:
+      group: design-${{ github.event.issue.number }}
+      cancel-in-progress: true
     runs-on: ubuntu-latest
     env:
       GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

@@ -49,7 +49,7 @@ flowchart LR
     A1 -->|allowed| D1[Workflow 1: Spectral lint]
     A2 -->|allowed| G1[Workflow 2: config, preview, OpenAPI Generator]
     A3 -->|allowed| X1[Workflow 3: Apigee bundle, optional deploy]
-    A1 & A2 & A3 -->|not allowed| R[Comment reason + close submission]
+    A1 & A2 & A3 -->|not allowed| R[Undo the action + comment reason]
     D1 & G1 & X1 -->|comment, close step| P
     P -->|all 3 steps closed| Z[Close parent + update ADO]
 ```
@@ -107,7 +107,7 @@ sequenceDiagram
     GH->>AU: issues opened / edited / reopened
     AU->>AU: Is the sender an owner or governance?<br/>Does the form point at the right bot-created step issue?
     alt not allowed
-        AU->>GH: "🔒 Not run: reason" + close as not planned
+        AU->>GH: undo: new issue closed / edit reverted / reopen closed again + reason
     else allowed
         AU->>ST: allowed=true
         ST->>ST: read_form.py (validate answers)
@@ -124,7 +124,7 @@ sequenceDiagram
 ```
 
 - All three step workflows listen to every issue event. The label check means only the matching one does any work (the others show as **skipped**).
-- **Edits re-run the step.** A newer edit cancels a run still in progress for the same issue (`concurrency`).
+- **Edits re-run the step.** A newer *allowed* edit cancels a run still in progress for the same issue. The cancel rule (`concurrency`) sits on the step job, not the workflow, so a rejected edit by someone else can never cancel the owner's run.
 - On an unexpected error the bot comments "❌ Something went wrong on our side" with the run log, and posts the same to ADO if configured.
 
 ### 2.5 What each step does
@@ -141,7 +141,7 @@ sequenceDiagram
 |---|---|---|
 | **Governance team** | Start an onboarding, fill in or fix any API's forms, change owners | Repo **Write** access + listed in the `GOVERNANCE` repo variable |
 | **API owners** | Fill in the step forms for *their* API only | Listed on the parent issue's `**Owners:**` line. Repo **Read** or **Triage** access is enough |
-| Anyone else with access | Open and read issues | Their submissions are closed with "🔒 Not run: reason". Nothing runs |
+| Anyone else with access | Open and read issues | Nothing runs, and their action is undone (see below) so the owner isn't affected |
 
 How `scripts/authorize.py` decides:
 
@@ -151,7 +151,15 @@ How `scripts/authorize.py` decides:
    - The form's API name must match the step issue's `api` marker. This stops someone pointing their form at another team's issue.
    - The owners are read from the **parent** issue's `**Owners:**` line.
    - The person who triggered the event (`github.event.sender`, so the editor for edits, not the original author) must be an owner or in `GOVERNANCE`.
-   - If any check fails, the bot comments the reason and closes the submission as *not planned*. The step job is skipped.
+   - If any check fails, the step job is skipped and the action is **undone, so the owner is never affected by someone else's action**:
+
+     | Rejected action | What the bot does |
+     |---|---|
+     | **Opened** a new submission | It's their own issue: comments "🔒 Not run: reason" and closes it as *not planned* |
+     | **Edited** someone's submission | Restores the previous title and body (from the edit event), leaves the issue open or closed as it was, comments "↩️ Reverted @user's edit". Edits on **closed** submissions are checked too, so completed records can't be altered |
+     | **Reopened** someone's closed submission | Closes it again with the reason it had before (e.g. *completed*), comments "↩️ Closed again" |
+
+     The bot's own revert doesn't trigger another run, because changes made with the workflow token don't start workflows.
 
 **Why it can't be bypassed through the normal flow:**
 - Owners come from bot-created issues, never from the form.
@@ -281,6 +289,7 @@ The function reads the API name from `Custom.APIName` (falls back to the title) 
    - **⏳ Working on it**, then **✅ done**, with the result and a download link.
    - **A list of fixes.** Edit the issue to fix them and it runs again.
    - **🔒 Not run.** You're not an owner of this API. Ask governance to add you.
+   - If someone who isn't an owner edits or reopens **your** submission, the bot undoes it and comments. Your request and any running job are not affected.
 4. When all three steps are done the parent issue closes by itself.
 
 **Codegen tip:** for Spring servers use API suffix `Api`. The generator names the implementation `<interface>Controller`, so suffix `Controller` gives `MembersControllerController`.
@@ -294,13 +303,13 @@ Run sections 7.1 and 7.2 on your machine. Sections 7.3–7.5 run on GitHub.
 ### 7.1 Unit tests (no network)
 
 ```bash
-python scripts/test_authorize.py          # 8 tests: access control
+python scripts/test_authorize.py          # 13 tests: access control + undoing rejected actions
 python azure-function/test_handler.py     # 4 tests: ADO webhook handler (run from azure-function/ or repo root)
 ```
 
 | Test file | Covers |
 |---|---|
-| `scripts/test_authorize.py` | owner allowed (case-insensitive), governance allowed, other team rejected, wrong step rejected, API name changed rejected, **fake step issue** rejected, missing issue rejected, team slug without `TEAM_READ_TOKEN` rejected |
+| `scripts/test_authorize.py` | owner allowed (case-insensitive), governance allowed, other team rejected, wrong step rejected, API name changed rejected, **fake step issue** rejected, missing issue rejected, team slug without `TEAM_READ_TOKEN` rejected, rejected **edit restores** the previous body/title without closing, rejected **reopen** closes again with the previous reason, rejected new issue closed |
 | `azure-function/test_handler.py` | bad basic auth rejected, approval dispatched, other state changes ignored, API name falls back to the work item title |
 
 ### 7.2 Local dry run of each step (no GitHub calls)
@@ -359,11 +368,12 @@ Ideally use a second GitHub account (with Read access) as the "other team". **Wi
 |---|---|---|---|
 | 1 | Governance submits for an API it doesn't own | You in `GOVERNANCE`, submit a `claims-api` form | ✅ Step runs |
 | 2 | Owner submits for their API | You not in `GOVERNANCE`, submit a `member-api` form | ✅ Step runs |
-| 3 | Other team submits | You not in `GOVERNANCE`, submit a `claims-api` form | 🔒 "isn't an owner of `claims-api` (owners: @octocat)", closed as not planned |
+| 3 | Other team submits | You not in `GOVERNANCE`, submit a `claims-api` form | 🔒 "isn't an owner of `claims-api` (owners: @octocat)", their new issue closed as not planned |
 | 4 | Pre-filled API name changed | `member-api` step issue number with API name `claims-api` | 🔒 "the API name doesn't match #N" |
 | 5 | Form pointed at the wrong step | Design form with the **codegen** step issue number | 🔒 "isn't a design step issue" |
 | 6 | Form pointed at a hand-made issue | Create an issue with fake markers and an Owners line, point a form at it | 🔒 "isn't a … step issue" (not created by the bot) |
-| 7 | Non-owner edits an owner's submission | Second account with Write edits the body | 🔒 Not run (checks the editor, not the author) |
+| 7 | Non-owner edits an owner's submission | Second account with Write edits the body (open or closed submission) | ↩️ Title/body restored, open/closed state unchanged, owner's running job not cancelled (checks the editor, not the author) |
+| 7b | Non-owner reopens an owner's completed submission | Second account with Write reopens it | ↩️ Closed again as *completed*, nothing runs |
 | 8 | Non-governance starts an onboarding | You not in `GOVERNANCE`, Run workflow | ❌ Run fails: "Only the governance team can start an onboarding" |
 | 9 | Owners changed | Governance edits the parent's Owners line, then the new owner submits | ✅ Runs, and the removed owner now gets 🔒 |
 | 10 | No owners | Start an onboarding via option B/C without owners, then owner-less user submits | 🔒 only governance can submit |
@@ -388,7 +398,7 @@ Ideally use a second GitHub account (with Read access) as the "other team". **Wi
 | Local dry run: design, codegen config + Docker generation, proxy bundle, validation messages | ✅ Done |
 | GitHub end to end: intake → 3 forms → parent auto-closed, including OpenAPI Generator | ✅ Done |
 | GitHub access control: scenarios 1, 2, 3, 4, 5, 8 | ✅ Done |
-| Scenarios 6, 7, 9, 10 on GitHub | Covered by unit tests or need a second account. Not run live yet |
+| Scenarios 6, 7, 7b, 9, 10 on GitHub | Covered by unit tests (6, 7, 7b) or need a second account. Not run live yet |
 | Apigee deploy, ADO comments/state, Azure Function deployed in Azure | ⏳ Not run yet |
 
 ---
