@@ -1,7 +1,7 @@
 """Create one parent tracking issue + three child issues (design, codegen, proxy) for an API.
 
 Called by the `intake` workflow when ADO marks an intake as approved (or manually for demos).
-Env: API_NAME (required), ADO_WORK_ITEM, SPEC_LOCATION, REQUESTED_BY, ADO_TITLE
+Env: API_NAME (required), OWNERS, ADO_WORK_ITEM, SPEC_LOCATION, REQUESTED_BY, ADO_TITLE
 """
 import os
 import sys
@@ -40,6 +40,7 @@ def main() -> None:
     spec = (os.environ.get("SPEC_LOCATION") or "").strip()
     requested_by = (os.environ.get("REQUESTED_BY") or "").strip()
     ado_title = (os.environ.get("ADO_TITLE") or "").strip()
+    owners = ", ".join(o.strip() for o in (os.environ.get("OWNERS") or "").split(",") if o.strip())
 
     existing = find_existing_parent(ado_id)
     if existing:
@@ -81,6 +82,8 @@ def main() -> None:
             "Once you submit it, the automation runs and posts the result back here. "
             "This issue closes automatically when the step is done.",
             "",
+            f"Only the owners listed on #{pnum} (and the governance team) can submit this form.",
+            "",
             f"Part of #{pnum}.",
             "",
             make_marker("parent", pnum),
@@ -98,6 +101,8 @@ def main() -> None:
         "",
         f"ADO intake: **{ado_title or ado_id or 'n/a'}**" + (f" (work item {ado_id})" if ado_id else ""),
         f"Requested by: {requested_by or 'n/a'}",
+        f"**Owners:** {owners}",
+        "_Only owners and the governance team can submit the step forms. Governance can edit the line above to change owners._",
         f"Spec: `{spec or 'not provided yet'}`",
         "",
         "Each step below is its own issue. Fill in its form and the automation takes it from there. "

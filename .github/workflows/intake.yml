@@ -11,6 +11,9 @@ on:
         description: "API name (lowercase, dashes)"
         required: true
         default: "member-api"
+      owners:
+        description: "Who can fill in the forms: GitHub usernames (@alice, @bob) or team slugs"
+        required: true
       ado_work_item:
         description: "ADO work item id (optional for demo)"
         required: false
@@ -37,6 +40,7 @@ jobs:
       ADO_PAT: ${{ secrets.ADO_PAT }}
       # Values come from either the ADO dispatch payload or the manual form.
       API_NAME: ${{ github.event.client_payload.api_name || inputs.api_name }}
+      OWNERS: ${{ github.event.client_payload.owners || inputs.owners }}
       ADO_WORK_ITEM: ${{ github.event.client_payload.ado_work_item || inputs.ado_work_item }}
       SPEC_LOCATION: ${{ github.event.client_payload.spec_location || inputs.spec_location }}
       REQUESTED_BY: ${{ github.event.client_payload.requested_by || inputs.requested_by || github.actor }}
@@ -49,6 +53,16 @@ jobs:
           python-version: "3.12"
 
       - run: pip install pyyaml
+
+      # Manual runs need write access anyway; this narrows it to the GOVERNANCE list.
+      # (repository_dispatch can only be sent with a write token, e.g. the Azure Function.)
+      - name: Only governance can start an onboarding
+        if: github.event_name == 'workflow_dispatch'
+        env:
+          SENDER: ${{ github.actor }}
+          GOVERNANCE: ${{ vars.GOVERNANCE }}
+          TEAM_READ_TOKEN: ${{ secrets.TEAM_READ_TOKEN }}
+        run: python scripts/authorize.py governance
 
       - name: Make sure labels exist
         run: |

@@ -16,8 +16,31 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  proxy:
+  # Only the API's owners (or governance) may submit or edit this form. See scripts/authorize.py.
+  authorize:
     if: contains(github.event.issue.labels.*.name, 'proxy-request') && github.event.issue.state == 'open'
+    runs-on: ubuntu-latest
+    outputs:
+      allowed: ${{ steps.check.outputs.allowed }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install pyyaml
+      - id: check
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TEAM_READ_TOKEN: ${{ secrets.TEAM_READ_TOKEN }}
+          GOVERNANCE: ${{ vars.GOVERNANCE }}
+          SENDER: ${{ github.event.sender.login }}
+          ISSUE_NUMBER: ${{ github.event.issue.number }}
+          ISSUE_BODY: ${{ github.event.issue.body }}
+        run: python scripts/authorize.py proxy
+
+  proxy:
+    needs: authorize
+    if: needs.authorize.outputs.allowed == 'true'
     runs-on: ubuntu-latest
     env:
       GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

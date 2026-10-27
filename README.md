@@ -38,6 +38,7 @@ flowchart LR
 | `.github/workflows/progress.yml` | Closes the parent if someone closes the last step by hand |
 | `.github/ISSUE_TEMPLATE/` | The three forms |
 | `scripts/` | All logic in plain Python (stdlib + PyYAML) |
+| `scripts/authorize.py` | Who may start an onboarding and who may fill in each API's forms |
 | `specs/member-api.yaml` | Sample spec for the demo |
 
 ## Setup
@@ -62,14 +63,29 @@ Without the ADO and Apigee settings everything still works. Those updates are ju
 
 That's all the setup the default approach needs. The ADO comments and the move to Done only need the `ADO_*` settings above, not the Azure Function.
 
+## Access control
+
+| Who | Can do | How it's enforced |
+|---|---|---|
+| **Governance team** | Start an onboarding (Run workflow), fill in or fix any API's forms, change owners | Repo **Write** access + listed in the `GOVERNANCE` variable |
+| **API owners** | Fill in the step forms for *their* API only | Listed on the parent issue's `**Owners:**` line. Repo **Read** or **Triage** access is enough |
+| Anyone else with access | Open and read issues | Their form submissions are closed with "🔒 Not run" and nothing runs |
+
+- **Starting an onboarding:** Run workflow needs Write access, and the intake also checks the person is in `GOVERNANCE` (a repo variable, e.g. `@alice, @bob`). If `GOVERNANCE` is empty, nobody can start one.
+- **Owners** are entered by governance in the Run workflow form (`@alice, @bob`) and written on the parent issue. To change them, governance edits that line. Owners can't edit it themselves, because Read/Triage users can't edit issues the bot created.
+- **Every form submit or edit** runs `scripts/authorize.py` first. It checks that the person who submitted or edited is an owner or in governance, and that the form points at a real bot-created step issue for the same API and step. Otherwise it comments the reason and closes the submission.
+- **GitHub teams:** both lists also accept team slugs from the repo's org (e.g. `member-squad`). That needs the repo in an org and a `TEAM_READ_TOKEN` secret (a token with `read:org`). Without the token, team entries never match, so access fails closed.
+- **Personal account repos:** every collaborator gets Write, so the `GOVERNANCE` check is what limits who can start an onboarding. Move to an org to give owners Read only.
+- Tests: `python scripts/test_authorize.py`.
+
 ## Ways to start the intake
 
 Only the very first workflow ("0 - API intake") needs a trigger. Everything after it (forms, design, codegen, proxy, ADO comments) works the same whichever option you use.
 
 | Option | How it starts | Needs | Status |
 |---|---|---|---|
-| **A. Run workflow button (default)** | **Actions → "0 - API intake" → Run workflow**, enter API name, ADO work item id, spec location | Nothing extra | Ready |
-| B. Script / CLI | `./scripts/demo_trigger.sh <org/repo> <api-name> [ado-work-item]` | `gh` CLI logged in | Ready |
+| **A. Run workflow button (default)** | **Actions → "0 - API intake" → Run workflow**, enter API name, owners, ADO work item id, spec location | Being in `GOVERNANCE` | Ready |
+| B. Script / CLI | `./scripts/demo_trigger.sh <org/repo> <api-name> "" "@alice, @bob"` | `gh` CLI logged in with write access | Ready |
 | C. Azure Function + ADO service hook | Moving the ADO work item to *Approved* calls the function, which calls GitHub. Fully automatic and instant. | Azure Function App, GitHub PAT, ADO service hook | Code ready, see below |
 | D. Power Automate / Logic App | Trigger "When a work item is updated" → check state is Approved → HTTP POST to `https://api.github.com/repos/<org>/<repo>/dispatches` with the body in `scripts/demo_trigger.sh` | Power Automate licence, GitHub PAT in the flow | Not built |
 | E. Scheduled GitHub workflow polls ADO | A cron workflow asks ADO every few minutes for newly approved items and starts the intake for each. Automatic, no Azure, a few minutes' delay. | `ADO_PAT` secret | Not built |
@@ -97,7 +113,7 @@ The function reads the API name from the `Custom.APIName` field (falls back to t
 
 ## Demo script (about 5 minutes)
 
-1. **Kick off.** Run **Actions → "0 - API intake" → Run workflow** with API name `member-api`. (Using option C? Move an intake to *Approved* in ADO instead.)
+1. **Kick off.** Run **Actions → "0 - API intake" → Run workflow** with API name `member-api` and owners `@<your-username>`. (Using option C? Move an intake to *Approved* in ADO instead.)
 2. **Show the tracking issue.** Parent `[API] member-api` with 3 sub-issues and a progress bar.
 3. **Design step.** Open `[Design] member-api` → click the form link → submit with `specs/member-api.yaml`. Shows "Design check passed" with suggestions. Tip: first submit a spec with a lowercase schema name to show the plain-language fix list.
 4. **Code generation step.** Submit the form with Java - Spring Boot, model suffix `Dto`, API suffix `Api`, rename `MemberRecord: MemberEnvelope`. Then:
