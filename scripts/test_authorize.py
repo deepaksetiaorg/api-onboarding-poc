@@ -7,6 +7,7 @@ from unittest import mock
 sys.path.insert(0, os.path.dirname(__file__))
 os.environ.update(GITHUB_REPOSITORY="org/repo", GOVERNANCE="@gov")
 import authorize  # noqa: E402
+import common  # noqa: E402
 
 BOT = {"login": "github-actions[bot]"}
 ISSUES = {
@@ -143,7 +144,7 @@ class OwnerAssigneeTests(unittest.TestCase):
     def test_sync_owner_change_only_touches_open_steps(self):
         parent = {"number": 1, "body": "**Owners:** `@alice`, `@carol`"}
         subs = [{"number": 2, "state": "open"}, {"number": 3, "state": "closed"}]
-        with mock.patch.object(authorize, "gh", lambda m, p, d=None, token=None: subs if "sub_issues" in p else None), \
+        with mock.patch.object(authorize, "step_issues", return_value=subs), \
              mock.patch.object(authorize, "sync_assignees", return_value=[]) as sync, \
              mock.patch.object(authorize, "comment") as comment:
             authorize.sync_owner_change(parent, "**Owners:** `@alice`, `@bob`")
@@ -168,6 +169,30 @@ class OwnerAssigneeTests(unittest.TestCase):
         with mock.patch.object(authorize, "gh", fake_gh):
             self.assertIsNotNone(authorize.guard_reason(step, "carol", "closed"))
             self.assertIsNotNone(authorize.check_step("codegen", form(), "carol"))
+
+
+class StepIssuesTests(unittest.TestCase):
+    """'All steps done' must use the steps marker, not the sub-issue list people can change."""
+
+    def run_with(self, parent):
+        calls = []
+        def gh(method, path, data=None, token=None):
+            calls.append(path)
+            if "sub_issues" in path:
+                return [{"number": 3, "state": "closed"}]  # someone detached the open steps
+            return {"number": int(path.rsplit("/", 1)[1]), "state": "open" if path.endswith("/2") else "closed"}
+        with mock.patch.object(common, "gh", gh):
+            return common.step_issues(parent), calls
+
+    def test_marker_wins_over_sub_issue_list(self):
+        steps, calls = self.run_with({"number": 1, "body": "<!-- steps:2,3,4 -->"})
+        self.assertEqual([s["number"] for s in steps], [2, 3, 4])
+        self.assertEqual([s["state"] for s in steps], ["open", "closed", "closed"])  # step 2 still open
+        self.assertFalse(any("sub_issues" in c for c in calls))
+
+    def test_old_parent_without_marker_falls_back(self):
+        steps, _ = self.run_with({"number": 1, "body": "no marker"})
+        self.assertEqual(steps, [{"number": 3, "state": "closed"}])
 
 
 class RejectTests(unittest.TestCase):

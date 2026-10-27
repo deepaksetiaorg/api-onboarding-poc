@@ -116,6 +116,7 @@ def main() -> None:
         "",
         make_marker("ado", ado_id),
         make_marker("api", api_name),
+        make_marker("steps", ",".join(map(str, step_numbers))),  # source of truth for "all steps done"
     ])
     gh("PATCH", f"/repos/{repo()}/issues/{pnum}", {"body": parent_body})
 

@@ -11,7 +11,7 @@ import argparse
 import os
 
 from common import (add_labels, ado_comment, ado_update, close_issue, comment, gh, issue_url,
-                    load_form, marker, remove_label, repo, run_url)
+                    load_form, marker, remove_label, repo, run_url, step_issues)
 
 STEP_NAMES = {"design": "Design check", "codegen": "Code generation", "proxy": "Apigee proxy"}
 
@@ -29,9 +29,10 @@ def check_parent(child_number: int) -> None:
     parent = marker(child.get("body"), "parent")
     if not parent:
         return
-    if gh("GET", f"/repos/{repo()}/issues/{parent}")["state"] == "closed":
+    parent_issue = gh("GET", f"/repos/{repo()}/issues/{parent}")
+    if parent_issue["state"] == "closed":
         return  # already done (e.g. several steps were closed at once)
-    subs = gh("GET", f"/repos/{repo()}/issues/{parent}/sub_issues?per_page=100")
+    subs = step_issues(parent_issue)
     open_steps = [s for s in subs if s["state"] == "open"]
     if open_steps:
         print(f"Parent #{parent}: {len(subs) - len(open_steps)}/{len(subs)} steps done")

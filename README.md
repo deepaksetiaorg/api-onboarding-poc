@@ -86,11 +86,13 @@ Three kinds of issues work together:
 
 | Issue | Created by | Title | Labels | Carries |
 |---|---|---|---|---|
-| **Parent** (tracking) | Bot (intake) | `[API] member-api` | `api-request` | Visible `**Owners:**` line, spec, requester, ADO id. Step issues are attached as native **sub-issues**, which gives a progress bar. |
+| **Parent** (tracking) | Bot (intake) | `[API] member-api` | `api-request` | Visible `**Owners:**` line, spec, requester, ADO id, hidden `steps` marker (the step issue numbers). Step issues are also attached as native **sub-issues**, which gives a progress bar. |
 | **Step** (one per step) | Bot (intake) | `[Design] / [Codegen] / [Proxy] member-api` | `api-step`, `step:<step>` | "Fill in the details here" link and hidden markers: `parent`, `step`, `api`, `ado`. **Assigned** to the individual owners |
 | **Submission** (the filled form) | Owner or governance | `[Codegen] member-api` | `design-request` / `codegen-request` / `proxy-request` | Form answers, including the pre-filled API name and **tracking issue number** (= the step issue) |
 
 **Hidden markers** are HTML comments in a bot-created issue body, for example `<!-- parent:5 -->` and `<!-- api:member-api -->`. They let the scripts move from a submission to its step issue to its parent without a database. They are only trusted on issues created by `github-actions[bot]`.
+
+**Sub-issues are for display only.** GitHub doesn't document who can attach or detach sub-issues; Triage and above can close, reopen and assign any issue, so assume they can. Nothing that decides anything reads the sub-issue list. "All steps done → close parent + ADO Done" and owner/assignee sync use the parent's `steps` marker, which only governance can edit (it's on the guarded parent). Detaching a step therefore only affects the progress bar, and can't make an onboarding look complete. Parents created before the marker existed fall back to the sub-issue list.
 
 **Labels** are created by the intake workflow: `api-request`, `api-step`, `step:design|codegen|proxy`, `design-request|codegen-request|proxy-request`, `needs-changes`.
 
@@ -331,7 +333,7 @@ Run sections 7.1 and 7.2 on your machine. Sections 7.3–7.5 run on GitHub.
 ### 7.1 Unit tests (no network)
 
 ```bash
-python scripts/test_authorize.py          # 30 tests: access control, guard rules, undoing rejected actions, owner/assignee sync
+python scripts/test_authorize.py          # 32 tests: access control, guard rules, undoing rejected actions, owner/assignee sync, steps marker
 python azure-function/test_handler.py     # 4 tests: ADO webhook handler (run from azure-function/ or repo root)
 ```
 
@@ -416,6 +418,7 @@ Ideally use a second GitHub account (with Read access) as the "other team". **Wi
 | 19 | Governance removes an owner | Close one step, then remove yourself from the Owners line | Unassigned on the open steps only. The closed step keeps you. Summary comment on the parent |
 | 20 | Governance adds an owner back | Add yourself again | Assigned on the open steps only |
 | 21 | Assigned but not an owner | Assign a non-owner by hand, they submit | 🔒 Still rejected (assignees never grant access) |
+| 22 | Unfinished step detached from the parent | Remove an open step from the parent's sub-issues, close the other steps | Parent stays open. "All steps done" still counts the detached step |
 
 ### 7.5 Validation tests on GitHub
 

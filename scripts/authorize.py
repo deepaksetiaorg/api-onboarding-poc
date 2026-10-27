@@ -23,7 +23,7 @@ import os
 import re
 import sys
 
-from common import close_issue, comment, gh, marker, parse_form, repo, set_output
+from common import close_issue, comment, gh, marker, parse_form, repo, set_output, step_issues
 from read_form import TEMPLATES
 
 BOT = "github-actions[bot]"
@@ -125,7 +125,7 @@ def sync_owner_change(parent: dict, prev_body: str) -> None:
     added, removed = owner_changes(prev_body, parent.get("body") or "")
     if not (added or removed):
         return
-    subs = gh("GET", f"/repos/{repo()}/issues/{parent['number']}/sub_issues?per_page=100") or []
+    subs = step_issues(parent)
     open_steps = [s["number"] for s in subs if s.get("state") == "open"]
     bad = sync_assignees(open_steps, users(added), users(removed))
     summary = (f"👥 Owners updated. Added: {format_owners(added) or 'none'}. Removed: {format_owners(removed) or 'none'}. "

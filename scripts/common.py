@@ -87,6 +87,19 @@ def make_marker(key: str, value) -> str:
     return f"<!-- {key}:{value} -->"
 
 
+def step_issues(parent: dict) -> list[dict]:
+    """A parent's step issues, from the `steps` marker written at intake (only governance can edit the parent).
+
+    Don't use the sub-issue list for decisions: people with triage access can attach or detach sub-issues,
+    e.g. detach an unfinished step so the parent closes as "all done". It's only a fallback for parents
+    created before the marker existed.
+    """
+    steps = marker(parent.get("body"), "steps")
+    if steps:
+        return [gh("GET", f"/repos/{repo()}/issues/{n}") for n in steps.split(",") if n.strip().isdigit()]
+    return gh("GET", f"/repos/{repo()}/issues/{parent['number']}/sub_issues?per_page=100") or []
+
+
 # --------------------------------------------------------------------------- #
 # Issue forms
 # --------------------------------------------------------------------------- #
