@@ -412,6 +412,8 @@ Ideally use a second GitHub account (with Read access) as the "other team". **Wi
 
 ### 7.6 Test status
 
+Full results with dates and issue numbers as evidence: [TEST-RESULTS.md](TEST-RESULTS.md).
+
 | Area | Status |
 |---|---|
 | Access control unit tests (8), Azure Function handler tests (4) | ✅ Passing |
