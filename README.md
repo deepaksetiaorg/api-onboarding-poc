@@ -62,7 +62,7 @@ flowchart LR
 | `.github/workflows/step-design.yml` | **Workflow 1.** `authorize` job, then lints the spec with Spectral using `.spectral.yaml` |
 | `.github/workflows/step-codegen.yml` | **Workflow 2.** `authorize` job, then builds `codegen.yaml`, previews class names, runs OpenAPI Generator, uploads the code |
 | `.github/workflows/step-proxy.yml` | **Workflow 3.** `authorize` job, then builds an Apigee proxy bundle, uploads it, optionally deploys |
-| `.github/workflows/progress.yml` | Closes the parent if someone closes the last step issue by hand |
+| `.github/workflows/guard.yml` | Undoes close/reopen/edit of parent, step and submission issues by people not allowed to, and closes the parent when the last step is closed by hand |
 | `.github/ISSUE_TEMPLATE/` | The three forms (`design-request.yml`, `codegen-request.yml`, `proxy-request.yml`) |
 | `.spectral.yaml` | API design rules used by the design check |
 | `scripts/authorize.py` | Access control: governance check for the intake, owner check for every form |
@@ -139,8 +139,8 @@ sequenceDiagram
 
 | Who | Can do | How it's enforced |
 |---|---|---|
-| **Governance team** | Start an onboarding, fill in or fix any API's forms, change owners | Repo **Write** access + listed in the `GOVERNANCE` repo variable |
-| **API owners** | Fill in the step forms for *their* API only | Listed on the parent issue's `**Owners:**` line. Repo **Read** or **Triage** access is enough |
+| **Governance team** | Start an onboarding, fill in or fix any API's forms, change owners, close/reopen/edit any onboarding issue | Repo **Write** access + listed in the `GOVERNANCE` repo variable |
+| **API owners** | Fill in the step forms for *their* API only, close/reopen *their* step issues (e.g. to skip a step) | Listed on the parent issue's `**Owners:**` line. Repo **Read** or **Triage** access is enough |
 | Anyone else with access | Open and read issues | Nothing runs, and their action is undone (see below) so the owner isn't affected |
 
 How `scripts/authorize.py` decides:
@@ -160,11 +160,22 @@ How `scripts/authorize.py` decides:
      | **Reopened** someone's closed submission | Closes it again with the reason it had before (e.g. *completed*), comments "↩️ Closed again" |
 
      The bot's own revert doesn't trigger another run, because changes made with the workflow token don't start workflows.
+3. **Close, reopen or edit of the onboarding issues (`guard` mode, `guard.yml`):**
+
+   | Issue | Close / reopen allowed for | Edit (title/body) allowed for |
+   |---|---|---|
+   | **Parent** `[API] …` | Governance | Governance (the Owners line lives here) |
+   | **Step** `[Design] …` etc. | The API's owners + governance | Governance (the hidden links live here) |
+   | **Submission** | Close: its author, the API's owners, governance | Checked by the step workflows (rule 2) |
+
+   Anyone else's action is undone with a comment: a close is reopened, a reopen is closed again with its previous reason, an edit is restored to the previous title/body. Only bot-created parent and step issues are protected. Submissions that don't point at a real step issue protect nothing, so anyone may close them.
+
+   "All steps done → close the parent (and move ADO to Done)" only runs **after** a manual step close has been allowed. Someone who isn't an owner can't mark an onboarding as complete by closing its steps.
 
 **Why it can't be bypassed through the normal flow:**
 - Owners come from bot-created issues, never from the form.
-- People with Read/Triage access can't edit issues they didn't create, so owners can't add themselves.
-- People with Write access could edit the Owners line, but Write access is reserved for governance.
+- People with Read access can't close, reopen or edit issues they didn't create. Triage can close/reopen any issue, and Write can also edit. So with GitHub permissions alone, Triage/Write users (and every collaborator on a personal-account repo) could close steps or edit the Owners line. The guard undoes that.
+- People with Write access could still change the workflows themselves. Keep Write for governance, and protect `.github/` and `scripts/` with branch protection + `CODEOWNERS`.
 
 **List format** (both `GOVERNANCE` and Owners): comma-separated GitHub usernames with `@` (`@alice, @bob`), matched case-insensitively, or **team slugs** from the repo's org (`member-squad`). Team slugs need the repo in a GitHub org and a `TEAM_READ_TOKEN` secret (a token with `read:org`). Without it, team entries never match.
 
@@ -303,7 +314,7 @@ Run sections 7.1 and 7.2 on your machine. Sections 7.3–7.5 run on GitHub.
 ### 7.1 Unit tests (no network)
 
 ```bash
-python scripts/test_authorize.py          # 13 tests: access control + undoing rejected actions
+python scripts/test_authorize.py          # 22 tests: access control, guard rules, undoing rejected actions
 python azure-function/test_handler.py     # 4 tests: ADO webhook handler (run from azure-function/ or repo root)
 ```
 
@@ -377,6 +388,13 @@ Ideally use a second GitHub account (with Read access) as the "other team". **Wi
 | 8 | Non-governance starts an onboarding | You not in `GOVERNANCE`, Run workflow | ❌ Run fails: "Only the governance team can start an onboarding" |
 | 9 | Owners changed | Governance edits the parent's Owners line, then the new owner submits | ✅ Runs, and the removed owner now gets 🔒 |
 | 10 | No owners | Start an onboarding via option B/C without owners, then owner-less user submits | 🔒 only governance can submit |
+| 11 | Non-owner closes an owner's open submission | Close a submission that's waiting on fixes | ↩️ Reopened with a comment |
+| 12 | Non-owner closes all 3 step issues by hand | Close the step issues | ↩️ Each reopened, parent stays open, nothing marked done |
+| 13 | Owner closes their own step issue (skip a step) | You as owner close a step | ✅ Stays closed. When all 3 are closed, parent closes |
+| 14 | Non-governance reopens / closes the parent | Reopen or close `[API] …` | ↩️ Undone with a comment |
+| 15 | Non-governance edits the parent's Owners line | Add yourself to Owners | ↩️ Body restored, your next form is still rejected |
+| 16 | Non-governance edits a step issue's hidden links | Change `<!-- parent:N -->` | ↩️ Body restored |
+| 17 | Governance closes/reopens/edits any of these | As governance | ✅ Allowed |
 
 ### 7.5 Validation tests on GitHub
 
@@ -398,7 +416,8 @@ Ideally use a second GitHub account (with Read access) as the "other team". **Wi
 | Local dry run: design, codegen config + Docker generation, proxy bundle, validation messages | ✅ Done |
 | GitHub end to end: intake → 3 forms → parent auto-closed, including OpenAPI Generator | ✅ Done |
 | GitHub access control: scenarios 1, 2, 3, 4, 5, 8 | ✅ Done |
-| Scenarios 6, 7, 7b, 9, 10 on GitHub | Covered by unit tests (6, 7, 7b) or need a second account. Not run live yet |
+| GitHub access control: 7, 7b, 11–17 | ✅ Done (with `GOVERNANCE` temporarily excluding the tester) |
+| Scenarios 6, 9, 10 on GitHub | Covered by unit tests (6) or not run live yet |
 | Apigee deploy, ADO comments/state, Azure Function deployed in Azure | ⏳ Not run yet |
 
 ---
@@ -412,7 +431,8 @@ Ideally use a second GitHub account (with Read access) as the "other team". **Wi
 | "🔒 the tracking issue isn't a … step issue" | The form wasn't opened from the step issue's link, or a pre-filled field was changed. Use the link. |
 | All three step workflows show in Actions for one submission | Expected. Only the matching one runs, the other two are **skipped**. |
 | Nothing ran after submitting | The submission needs its form label (`codegen-request` etc.). Blank issues don't trigger anything. |
-| Parent didn't close after closing the last step by hand | `progress.yml` handles this. Check that the step issue has the `api-step` label. |
+| Parent didn't close after closing the last step by hand | `guard.yml` handles this, but only if the person who closed it is an owner or governance. Check the Guard run and that the step issue has the `api-step` label. |
+| A close/reopen/edit was undone with "↩️" | The person isn't allowed to change that issue (see section 2.6, rule 3). |
 | Codegen failed in the Docker step | Open the run log from the "❌" comment. Usually a spec the generator can't handle. |
 | ADO not updated | `ADO_ORG_URL`, `ADO_PROJECT`, `ADO_PAT` and a work item id are all needed. ADO errors never fail the run; they're printed as `[ado] …` in the log. |
 

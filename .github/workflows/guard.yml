@@ -1,0 +1,57 @@
+# Protects the onboarding issues from people who aren't allowed to change them, and closes the parent
+# when the last step is closed by hand. Close/reopen/edit by anyone else is undone (see scripts/authorize.py):
+#   parent issue     -> governance only
+#   step issue       -> owners may close/reopen, only governance may edit
+#   submission close -> its author, the API's owners or governance
+# (Closes done by the bot don't trigger workflows, so report.py checks the parent itself in that case.)
+name: "Guard"
+
+on:
+  issues:
+    types: [closed, reopened, edited]
+
+permissions:
+  contents: read
+  issues: write
+
+jobs:
+  guard:
+    if: >-
+      contains(github.event.issue.labels.*.name, 'api-request') ||
+      contains(github.event.issue.labels.*.name, 'api-step') ||
+      (github.event.action == 'closed' && (
+        contains(github.event.issue.labels.*.name, 'design-request') ||
+        contains(github.event.issue.labels.*.name, 'codegen-request') ||
+        contains(github.event.issue.labels.*.name, 'proxy-request')))
+    runs-on: ubuntu-latest
+    env:
+      GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      ISSUE_NUMBER: ${{ github.event.issue.number }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install pyyaml
+
+      - name: Check who did it
+        id: guard
+        env:
+          TEAM_READ_TOKEN: ${{ secrets.TEAM_READ_TOKEN }}
+          GOVERNANCE: ${{ vars.GOVERNANCE }}
+          SENDER: ${{ github.event.sender.login }}
+          ACTION: ${{ github.event.action }}
+          PREV_BODY: ${{ github.event.changes.body.from }}
+          PREV_TITLE: ${{ github.event.changes.title.from }}
+        run: python scripts/authorize.py guard
+
+      - name: Close the parent if every step is done
+        if: >-
+          steps.guard.outputs.allowed == 'true' && github.event.action == 'closed' &&
+          contains(github.event.issue.labels.*.name, 'api-step')
+        env:
+          ADO_ORG_URL: ${{ vars.ADO_ORG_URL }}
+          ADO_PROJECT: ${{ vars.ADO_PROJECT }}
+          ADO_PAT: ${{ secrets.ADO_PAT }}
+          ADO_DONE_STATE: ${{ vars.ADO_DONE_STATE }}
+        run: python scripts/report.py check-parent --child ${{ github.event.issue.number }}

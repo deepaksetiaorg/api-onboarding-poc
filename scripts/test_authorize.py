@@ -10,8 +10,8 @@ import authorize  # noqa: E402
 
 BOT = {"login": "github-actions[bot]"}
 ISSUES = {
-    "/repos/org/repo/issues/1": {"number": 1, "user": BOT, "body": "**Owners:** @alice, @Bob\n<!-- api:member-api -->"},
-    "/repos/org/repo/issues/2": {"number": 2, "user": BOT,
+    "/repos/org/repo/issues/1": {"number": 1, "user": BOT, "labels": [{"name": "api-request"}], "body": "**Owners:** @alice, @Bob\n<!-- api:member-api -->"},
+    "/repos/org/repo/issues/2": {"number": 2, "user": BOT, "labels": [{"name": "api-step"}],
                                  "body": "<!-- parent:1 -->\n<!-- step:codegen -->\n<!-- api:member-api -->"},
     # Someone hand-crafted an issue that looks like a step issue and lists themselves as owner.
     "/repos/org/repo/issues/9": {"number": 9, "user": {"login": "mallory"},
@@ -60,6 +60,55 @@ class AuthorizeTests(unittest.TestCase):
             self.assertIsNotNone(authorize.check_step("codegen", form(), "gov"))
 
 
+def submission(author, tracking="2"):
+    body = f"### API name\n\nmember-api\n\n### Tracking issue number\n\n{tracking}"
+    return {"number": 7, "user": {"login": author}, "labels": [{"name": "codegen-request"}], "body": body}
+
+
+@mock.patch.object(authorize, "gh", fake_gh)
+class GuardTests(unittest.TestCase):
+    """Who may close / reopen / edit the parent, step and submission issues."""
+
+    def parent(self):
+        return ISSUES["/repos/org/repo/issues/1"]
+
+    def step(self):
+        return ISSUES["/repos/org/repo/issues/2"]
+
+    def test_parent_governance_only(self):
+        for action in ("closed", "reopened", "edited"):
+            self.assertIsNone(authorize.guard_reason(self.parent(), "gov", action))
+            self.assertIsNotNone(authorize.guard_reason(self.parent(), "alice", action))  # even an owner
+            self.assertIsNotNone(authorize.guard_reason(self.parent(), "carol", action))
+
+    def test_step_owner_may_close_and_reopen(self):
+        self.assertIsNone(authorize.guard_reason(self.step(), "alice", "closed"))
+        self.assertIsNone(authorize.guard_reason(self.step(), "bob", "reopened"))
+
+    def test_step_non_owner_may_not_close_or_reopen(self):
+        self.assertIn("only the owners", authorize.guard_reason(self.step(), "carol", "closed"))
+        self.assertIn("reopen this step", authorize.guard_reason(self.step(), "carol", "reopened"))
+
+    def test_step_edit_governance_only(self):
+        self.assertIsNotNone(authorize.guard_reason(self.step(), "alice", "edited"))
+        self.assertIsNone(authorize.guard_reason(self.step(), "gov", "edited"))
+
+    def test_bot_always_allowed(self):
+        self.assertIsNone(authorize.guard_reason(self.parent(), "github-actions[bot]", "closed"))
+
+    def test_submission_close(self):
+        self.assertIsNone(authorize.guard_reason(submission("dave"), "dave", "closed"))   # its author
+        self.assertIsNone(authorize.guard_reason(submission("dave"), "alice", "closed"))  # an owner
+        self.assertIsNone(authorize.guard_reason(submission("dave"), "gov", "closed"))
+        self.assertIsNotNone(authorize.guard_reason(submission("alice"), "carol", "closed"))
+
+    def test_unlinked_submission_close_allowed(self):
+        self.assertIsNone(authorize.guard_reason(submission("alice", tracking="404"), "carol", "closed"))
+
+    def test_unrelated_issue_ignored(self):
+        self.assertIsNone(authorize.guard_reason({"user": {"login": "x"}, "labels": []}, "carol", "closed"))
+
+
 class RejectTests(unittest.TestCase):
     """A rejected action must leave the owner's submission as it was."""
 
@@ -94,6 +143,11 @@ class RejectTests(unittest.TestCase):
                   {"event": "closed", "state_reason": "completed"}, {"event": "reopened"}]
         _, _, close = self.run_reject("reopened", events=events)
         close.assert_called_once_with(5, "completed")
+
+    def test_closed_is_reopened(self):
+        calls, comment, close = self.run_reject("closed")
+        self.assertEqual(calls, [("PATCH", "/repos/org/repo/issues/5", {"state": "open"})])
+        close.assert_not_called()
 
     def test_reopened_without_history_defaults_to_completed(self):
         _, _, close = self.run_reject("reopened")
